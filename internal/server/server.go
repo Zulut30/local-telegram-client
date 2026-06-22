@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -30,6 +31,9 @@ func NewWithStore(cfg config.Config, logger *slog.Logger, st store.Store) http.H
 	simHandler := sim.New(st, logger, hub)
 	mux.HandleFunc("POST /_sim/inject", simHandler.Inject)
 	mux.HandleFunc("GET /_sim/state", simHandler.State)
+	mux.HandleFunc("GET /_sim/traces", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "result": recorder.Snapshot()})
+	})
 	mux.Handle("GET /_sim/events", hub)
 	mux.Handle("GET /", webui.Handler())
 
@@ -51,6 +55,12 @@ func healthz(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"ok":true}`))
+}
+
+func writeJSON(w http.ResponseWriter, status int, value any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(value)
 }
 
 func loggingMiddleware(logger *slog.Logger, next http.Handler) http.Handler {

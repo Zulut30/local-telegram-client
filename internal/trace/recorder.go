@@ -200,6 +200,7 @@ func (r *Recorder) newTraceLocked(inbound *InboundEvent, orphan bool) *Trace {
 	trace := &Trace{
 		ID:          id,
 		Inbound:     inbound,
+		Calls:       []OutboundCall{},
 		StartedAt:   time.Now().UTC(),
 		Status:      StatusOpen,
 		Correlation: CorrelationInferred,
@@ -281,7 +282,11 @@ func cloneTrace(trace Trace) Trace {
 		finished := *trace.FinishedAt
 		trace.FinishedAt = &finished
 	}
-	trace.Calls = append([]OutboundCall(nil), trace.Calls...)
+	if trace.Calls == nil {
+		trace.Calls = []OutboundCall{}
+	} else {
+		trace.Calls = append([]OutboundCall(nil), trace.Calls...)
+	}
 	for i := range trace.Calls {
 		trace.Calls[i].Params = TrimParams(trace.Calls[i].Params)
 	}

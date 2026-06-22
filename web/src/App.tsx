@@ -1,10 +1,13 @@
 import { ChatList } from './components/ChatList';
 import { Composer } from './components/Composer';
 import { MessageList } from './components/MessageList';
+import { TracePanel } from './components/TracePanel';
 import { useSimState } from './useSimState';
+import { useTraceState } from './useTraceState';
 
 export function App() {
   const sim = useSimState();
+  const traces = useTraceState();
 
   return (
     <main className="shell">
@@ -25,6 +28,7 @@ export function App() {
         <MessageList messages={sim.selectedMessages} onCallback={sim.sendCallback} onReplyText={sim.sendText} />
         <Composer onSend={sim.sendText} />
       </section>
+      <TracePanel traces={traces} />
     </main>
   );
 }

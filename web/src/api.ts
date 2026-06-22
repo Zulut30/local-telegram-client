@@ -1,4 +1,4 @@
-import type { Message, SimResponse, SimState } from './types';
+import type { Message, SimResponse, SimState, Trace } from './types';
 
 async function readResponse<T>(response: Response): Promise<T> {
   const payload = (await response.json()) as SimResponse<T>;
@@ -11,6 +11,11 @@ async function readResponse<T>(response: Response): Promise<T> {
 export async function loadState(signal?: AbortSignal): Promise<SimState> {
   const response = await fetch('/_sim/state', { signal });
   return readResponse<SimState>(response);
+}
+
+export async function loadTraces(signal?: AbortSignal): Promise<Trace[]> {
+  const response = await fetch('/_sim/traces', { signal });
+  return readResponse<Trace[]>(response);
 }
 
 export async function injectText(chatID: number, text: string): Promise<void> {
