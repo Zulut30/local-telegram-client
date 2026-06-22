@@ -8,16 +8,33 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Zulut30/local-telegram-client/internal/botapi"
 	"github.com/Zulut30/local-telegram-client/internal/config"
+	"github.com/Zulut30/local-telegram-client/internal/sim"
+	"github.com/Zulut30/local-telegram-client/internal/store"
 	"github.com/Zulut30/local-telegram-client/internal/webui"
 )
 
 func New(cfg config.Config, logger *slog.Logger) http.Handler {
+	return NewWithStore(cfg, logger, store.NewMemory())
+}
+
+func NewWithStore(cfg config.Config, logger *slog.Logger, st store.Store) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", healthz)
+	simHandler := sim.New(st, logger)
+	mux.HandleFunc("POST /_sim/inject", simHandler.Inject)
+	mux.HandleFunc("GET /_sim/state", simHandler.State)
 	mux.Handle("GET /", webui.Handler())
 
-	var handler http.Handler = mux
+	botHandler := botapi.New(cfg, st, logger)
+	var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/bot") {
+			botHandler.ServeHTTP(w, r)
+			return
+		}
+		mux.ServeHTTP(w, r)
+	})
 	handler = accessTokenMiddleware(cfg, handler)
 	handler = loggingMiddleware(logger, handler)
 	handler = recoverMiddleware(logger, handler)
