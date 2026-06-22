@@ -5,12 +5,14 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/Zulut30/local-telegram-client/internal/events"
 	"github.com/Zulut30/local-telegram-client/internal/store"
 )
 
 type Handler struct {
 	store  store.Store
 	logger *slog.Logger
+	hub    *events.Hub
 }
 
 type injectRequest struct {
@@ -27,8 +29,8 @@ type response struct {
 	Result any  `json:"result,omitempty"`
 }
 
-func New(st store.Store, logger *slog.Logger) *Handler {
-	return &Handler{store: st, logger: logger}
+func New(st store.Store, logger *slog.Logger, hub *events.Hub) *Handler {
+	return &Handler{store: st, logger: logger, hub: hub}
 }
 
 func (h *Handler) Inject(w http.ResponseWriter, r *http.Request) {
@@ -57,6 +59,9 @@ func (h *Handler) Inject(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("inject text", "error", err)
 		writeError(w, http.StatusInternalServerError, "inject text")
 		return
+	}
+	if h.hub != nil && update.Message != nil {
+		h.hub.Broadcast("message", map[string]any{"op": "created", "message": update.Message})
 	}
 	writeJSON(w, http.StatusOK, response{OK: true, Result: update})
 }

@@ -10,8 +10,10 @@ import (
 
 	"github.com/Zulut30/local-telegram-client/internal/botapi"
 	"github.com/Zulut30/local-telegram-client/internal/config"
+	"github.com/Zulut30/local-telegram-client/internal/events"
 	"github.com/Zulut30/local-telegram-client/internal/sim"
 	"github.com/Zulut30/local-telegram-client/internal/store"
+	tracing "github.com/Zulut30/local-telegram-client/internal/trace"
 	"github.com/Zulut30/local-telegram-client/internal/webui"
 )
 
@@ -20,14 +22,18 @@ func New(cfg config.Config, logger *slog.Logger) http.Handler {
 }
 
 func NewWithStore(cfg config.Config, logger *slog.Logger, st store.Store) http.Handler {
+	hub := events.NewHub(cfg.BufferSize)
+	recorder := tracing.NewRecorder(cfg.BufferSize, hub)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", healthz)
-	simHandler := sim.New(st, logger)
+	simHandler := sim.New(st, logger, hub)
 	mux.HandleFunc("POST /_sim/inject", simHandler.Inject)
 	mux.HandleFunc("GET /_sim/state", simHandler.State)
+	mux.Handle("GET /_sim/events", hub)
 	mux.Handle("GET /", webui.Handler())
 
-	botHandler := botapi.New(cfg, st, logger)
+	botHandler := botapi.New(cfg, st, logger, hub, recorder)
 	var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/bot") {
 			botHandler.ServeHTTP(w, r)
@@ -110,4 +116,12 @@ type statusRecorder struct {
 func (rec *statusRecorder) WriteHeader(status int) {
 	rec.status = status
 	rec.ResponseWriter.WriteHeader(status)
+}
+
+func (rec *statusRecorder) Flush() {
+	flusher, ok := rec.ResponseWriter.(http.Flusher)
+	if !ok {
+		return
+	}
+	flusher.Flush()
 }

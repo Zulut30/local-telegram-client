@@ -1,6 +1,7 @@
 package botapi
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,23 +16,29 @@ import (
 	"unicode"
 
 	"github.com/Zulut30/local-telegram-client/internal/config"
+	"github.com/Zulut30/local-telegram-client/internal/events"
 	"github.com/Zulut30/local-telegram-client/internal/store"
 	"github.com/Zulut30/local-telegram-client/internal/tg"
+	tracing "github.com/Zulut30/local-telegram-client/internal/trace"
 )
 
 type Handler struct {
-	cfg    config.Config
-	store  store.Store
-	logger *slog.Logger
-	bot    tg.User
+	cfg      config.Config
+	store    store.Store
+	logger   *slog.Logger
+	bot      tg.User
+	hub      *events.Hub
+	recorder *tracing.Recorder
 }
 
-func New(cfg config.Config, st store.Store, logger *slog.Logger) *Handler {
+func New(cfg config.Config, st store.Store, logger *slog.Logger, hub *events.Hub, recorder *tracing.Recorder) *Handler {
 	return &Handler{
-		cfg:    cfg,
-		store:  st,
-		logger: logger,
-		bot:    BotUser(cfg.BotToken),
+		cfg:      cfg,
+		store:    st,
+		logger:   logger,
+		bot:      BotUser(cfg.BotToken),
+		hub:      hub,
+		recorder: recorder,
 	}
 }
 
@@ -48,10 +55,26 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	params, err := parseParams(r)
 	if err != nil {
+		if shouldTrace(method) {
+			h.recordCall(method, params, 0, responseMeta{
+				httpStatus: http.StatusBadRequest,
+				ok:         false,
+				errorCode:  400,
+				errorDesc:  err.Error(),
+			})
+		}
 		writeError(w, http.StatusBadRequest, 400, err.Error())
 		return
 	}
 
+	if shouldTrace(method) {
+		h.serveTraced(w, r, method, params)
+		return
+	}
+	h.dispatch(w, r, method, params)
+}
+
+func (h *Handler) dispatch(w http.ResponseWriter, r *http.Request, method string, params parameters) {
 	switch method {
 	case "getMe":
 		writeOK(w, h.bot)
@@ -63,6 +86,36 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.logger.Info("unimplemented bot api method", "method", method)
 		writeOK(w, true)
 	}
+}
+
+func (h *Handler) serveTraced(w http.ResponseWriter, r *http.Request, method string, params parameters) {
+	capture := newCaptureResponseWriter()
+	start := time.Now()
+	h.dispatch(capture, r, method, params)
+	latency := time.Since(start)
+	meta := capture.Meta()
+	capture.FlushTo(w)
+	h.recordCall(method, params, latency, meta)
+}
+
+func (h *Handler) recordCall(method string, params parameters, latency time.Duration, meta responseMeta) {
+	if h.recorder == nil {
+		return
+	}
+	chatID := params.ChatID()
+	h.recorder.RecordCall(chatID, tracing.OutboundCall{
+		Method:     method,
+		Params:     params.TraceParams(),
+		HTTPStatus: meta.httpStatus,
+		OK:         meta.ok,
+		ErrorCode:  meta.errorCode,
+		ErrorDesc:  meta.errorDesc,
+		LatencyMS:  latency.Milliseconds(),
+	})
+}
+
+func shouldTrace(method string) bool {
+	return method != "getMe" && method != "getUpdates"
 }
 
 func BotUser(token string) tg.User {
@@ -85,6 +138,10 @@ func BotUser(token string) tg.User {
 }
 
 func (h *Handler) handleGetUpdates(w http.ResponseWriter, r *http.Request, params parameters) {
+	if h.recorder != nil {
+		h.recorder.FlushOpen()
+	}
+
 	offset, err := params.Int64("offset", 0)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, 400, "offset must be an integer")
@@ -108,6 +165,9 @@ func (h *Handler) handleGetUpdates(w http.ResponseWriter, r *http.Request, param
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, 500, err.Error())
 		return
+	}
+	if h.recorder != nil {
+		h.recorder.OpenForUpdates(updates)
 	}
 	writeOK(w, updates)
 }
@@ -144,6 +204,9 @@ func (h *Handler) handleSendMessage(w http.ResponseWriter, r *http.Request, para
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, 500, err.Error())
 		return
+	}
+	if h.hub != nil {
+		h.hub.Broadcast("message", map[string]any{"op": "created", "message": msg})
 	}
 	writeOK(w, msg)
 }
@@ -198,6 +261,70 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
+}
+
+type responseMeta struct {
+	httpStatus int
+	ok         bool
+	errorCode  int
+	errorDesc  string
+}
+
+type captureResponseWriter struct {
+	header http.Header
+	body   bytes.Buffer
+	status int
+}
+
+func newCaptureResponseWriter() *captureResponseWriter {
+	return &captureResponseWriter{header: make(http.Header)}
+}
+
+func (w *captureResponseWriter) Header() http.Header {
+	return w.header
+}
+
+func (w *captureResponseWriter) WriteHeader(status int) {
+	if w.status != 0 {
+		return
+	}
+	w.status = status
+}
+
+func (w *captureResponseWriter) Write(data []byte) (int, error) {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	return w.body.Write(data)
+}
+
+func (w *captureResponseWriter) FlushTo(dst http.ResponseWriter) {
+	for key, values := range w.header {
+		for _, value := range values {
+			dst.Header().Add(key, value)
+		}
+	}
+	status := w.status
+	if status == 0 {
+		status = http.StatusOK
+	}
+	dst.WriteHeader(status)
+	_, _ = dst.Write(w.body.Bytes())
+}
+
+func (w *captureResponseWriter) Meta() responseMeta {
+	status := w.status
+	if status == 0 {
+		status = http.StatusOK
+	}
+	meta := responseMeta{httpStatus: status, ok: status < http.StatusBadRequest}
+	var api apiResponse
+	if err := json.Unmarshal(w.body.Bytes(), &api); err == nil {
+		meta.ok = api.OK
+		meta.errorCode = api.ErrorCode
+		meta.errorDesc = api.Description
+	}
+	return meta
 }
 
 type parameters map[string]any
@@ -296,6 +423,22 @@ func (p parameters) Int64(key string, fallback int64) (int64, error) {
 	default:
 		return 0, fmt.Errorf("%s must be an integer", key)
 	}
+}
+
+func (p parameters) ChatID() *int64 {
+	chatID, err := p.Int64("chat_id", 0)
+	if err != nil || chatID == 0 {
+		return nil
+	}
+	return &chatID
+}
+
+func (p parameters) TraceParams() map[string]any {
+	out := make(map[string]any, len(p))
+	for key, value := range p {
+		out[key] = value
+	}
+	return out
 }
 
 func (p parameters) RawJSON(key string) (json.RawMessage, error) {
