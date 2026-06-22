@@ -13,6 +13,7 @@ import (
 
 type Store interface {
 	InjectText(ctx context.Context, input TextInput) (tg.Update, error)
+	InjectCallback(ctx context.Context, input CallbackInput) (tg.Update, error)
 	GetUpdates(ctx context.Context, offset int64, limit int, timeout time.Duration) ([]tg.Update, error)
 	SaveBotMessage(ctx context.Context, input BotMessageInput) (tg.Message, error)
 	State(ctx context.Context) (State, error)
@@ -25,6 +26,15 @@ type TextInput struct {
 	Username  string
 	FirstName string
 	Text      string
+}
+
+type CallbackInput struct {
+	ChatID    int64
+	MessageID int64
+	UserID    int64
+	Username  string
+	FirstName string
+	Data      string
 }
 
 type BotMessageInput struct {
@@ -94,6 +104,46 @@ func (m *Memory) InjectText(_ context.Context, input TextInput) (tg.Update, erro
 	update := tg.Update{
 		UpdateID: m.nextUpdateID,
 		Message:  &msg,
+	}
+	m.nextUpdateID++
+	m.updates = append(m.updates, update)
+	m.signalLocked()
+
+	return update, nil
+}
+
+func (m *Memory) InjectCallback(_ context.Context, input CallbackInput) (tg.Update, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if input.ChatID == 0 {
+		input.ChatID = 1
+	}
+	if input.UserID == 0 {
+		input.UserID = input.ChatID
+	}
+	if input.FirstName == "" {
+		input.FirstName = "Developer"
+	}
+
+	msg := m.messageLocked(input.ChatID, input.MessageID)
+	if msg == nil {
+		return tg.Update{}, ErrMessageNotFound
+	}
+	user := tg.User{
+		ID:        input.UserID,
+		IsBot:     false,
+		FirstName: input.FirstName,
+		Username:  input.Username,
+	}
+	update := tg.Update{
+		UpdateID: m.nextUpdateID,
+		CallbackQuery: &tg.CallbackQuery{
+			ID:      "cb_" + strconv.FormatInt(m.nextUpdateID, 10),
+			From:    user,
+			Message: msg,
+			Data:    input.Data,
+		},
 	}
 	m.nextUpdateID++
 	m.updates = append(m.updates, update)
@@ -202,6 +252,24 @@ func (m *Memory) chatLocked(chatID int64, username, firstName string) tg.Chat {
 	}
 	m.chats[chatID] = chat
 	return chat
+}
+
+func (m *Memory) messageLocked(chatID, messageID int64) *tg.Message {
+	messages := m.messages[chatID]
+	if len(messages) == 0 {
+		return nil
+	}
+	if messageID == 0 {
+		msg := messages[len(messages)-1]
+		return &msg
+	}
+	for _, msg := range messages {
+		if msg.MessageID == messageID {
+			found := msg
+			return &found
+		}
+	}
+	return nil
 }
 
 func (m *Memory) dropBeforeLocked(offset int64) {

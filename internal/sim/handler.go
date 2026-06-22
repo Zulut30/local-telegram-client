@@ -2,6 +2,7 @@ package sim
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 
@@ -22,6 +23,8 @@ type injectRequest struct {
 	Username  string `json:"username"`
 	FirstName string `json:"first_name"`
 	Text      string `json:"text"`
+	MessageID int64  `json:"message_id"`
+	Data      string `json:"data"`
 }
 
 type response struct {
@@ -39,10 +42,17 @@ func (h *Handler) Inject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	if req.Type != "" && req.Type != "message" && req.Type != "text" {
-		writeError(w, http.StatusBadRequest, "only text message injection is supported")
-		return
+	switch req.Type {
+	case "", "message", "text":
+		h.injectText(w, r, req)
+	case "callback_query", "callback":
+		h.injectCallback(w, r, req)
+	default:
+		writeError(w, http.StatusBadRequest, "unsupported injection type")
 	}
+}
+
+func (h *Handler) injectText(w http.ResponseWriter, r *http.Request, req injectRequest) {
 	if req.Text == "" {
 		writeError(w, http.StatusBadRequest, "text is required")
 		return
@@ -62,6 +72,32 @@ func (h *Handler) Inject(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.hub != nil && update.Message != nil {
 		h.hub.Broadcast("message", map[string]any{"op": "created", "message": update.Message})
+	}
+	writeJSON(w, http.StatusOK, response{OK: true, Result: update})
+}
+
+func (h *Handler) injectCallback(w http.ResponseWriter, r *http.Request, req injectRequest) {
+	if req.Data == "" {
+		writeError(w, http.StatusBadRequest, "data is required")
+		return
+	}
+
+	update, err := h.store.InjectCallback(r.Context(), store.CallbackInput{
+		ChatID:    req.ChatID,
+		MessageID: req.MessageID,
+		UserID:    req.UserID,
+		Username:  req.Username,
+		FirstName: req.FirstName,
+		Data:      req.Data,
+	})
+	if err != nil {
+		if errors.Is(err, store.ErrMessageNotFound) {
+			writeError(w, http.StatusBadRequest, "message not found")
+			return
+		}
+		h.logger.Error("inject callback", "error", err)
+		writeError(w, http.StatusInternalServerError, "inject callback")
+		return
 	}
 	writeJSON(w, http.StatusOK, response{OK: true, Result: update})
 }
