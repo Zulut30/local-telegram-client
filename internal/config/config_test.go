@@ -17,6 +17,9 @@ func TestLoadDefaultsToLocalMode(t *testing.T) {
 	if cfg.BufferSize != defaultBufferSize {
 		t.Fatalf("BufferSize = %d, want %d", cfg.BufferSize, defaultBufferSize)
 	}
+	if cfg.APIMode != APIModeCompat {
+		t.Fatalf("APIMode = %q, want %q", cfg.APIMode, APIModeCompat)
+	}
 }
 
 func TestLoadRemoteModeDefaultsAddressAndRequiresToken(t *testing.T) {
@@ -47,5 +50,35 @@ func TestLoadFlagOverridesEnv(t *testing.T) {
 	}
 	if cfg.Addr != "127.0.0.1:9999" {
 		t.Fatalf("Addr = %q, want explicit flag value", cfg.Addr)
+	}
+}
+
+func TestLoadAPIMode(t *testing.T) {
+	t.Setenv("SIM_API_MODE", APIModeStrict)
+
+	cfg, err := Load(nil)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.APIMode != APIModeStrict {
+		t.Fatalf("APIMode from env = %q, want %q", cfg.APIMode, APIModeStrict)
+	}
+
+	cfg, err = Load([]string{"--api-mode", APIModeCompat})
+	if err != nil {
+		t.Fatalf("Load with api mode flag returned error: %v", err)
+	}
+	if cfg.APIMode != APIModeCompat {
+		t.Fatalf("APIMode from flag = %q, want %q", cfg.APIMode, APIModeCompat)
+	}
+
+	if _, err := Load([]string{"--api-mode", "loose"}); err == nil {
+		t.Fatal("Load with invalid api mode returned nil error")
+	}
+}
+
+func TestEffectiveAPIModeDefaultsToCompat(t *testing.T) {
+	if got := (Config{}).EffectiveAPIMode(); got != APIModeCompat {
+		t.Fatalf("EffectiveAPIMode = %q, want %q", got, APIModeCompat)
 	}
 }

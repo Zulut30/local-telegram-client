@@ -29,7 +29,7 @@ func run() error {
 	}
 
 	logger := newLogger(cfg.LogFormat)
-	logger.Info("starting sim", "addr", cfg.Addr, "mode", cfg.Mode)
+	logger.Info("starting sim", "addr", cfg.Addr, "mode", cfg.Mode, "api_mode", cfg.EffectiveAPIMode())
 
 	srv := &http.Server{
 		Addr:         cfg.Addr,

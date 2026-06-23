@@ -20,6 +20,9 @@ What works today:
 - Local Bot API endpoint compatible with real bot SDKs through `/bot<TOKEN>/<method>`.
 - Stateful polling, webhook delivery, user message injection, callback injection, bot replies,
   edits, deletes, reply markup, media-like messages, and trace correlation.
+- `GET /_sim/coverage` exposes a machine-readable Bot API coverage matrix.
+- `--api-mode=compat|strict` switches between permissive compatibility stubs and explicit errors
+  for non-semantic methods.
 - Russian IDE-style browser UI with chat list, guide panel, console panel, light/dark theme,
   attachment upload simulation, trace copy, and trace reset.
 - Showcase recipe bot for manual testing of messages, photos, buttons, callback answers, rich
@@ -110,11 +113,17 @@ Coverage levels:
 |---|---|---|
 | Stateful | The method changes simulator state, is visible in UI, and is covered by integration tests. | `getUpdates`, webhook methods, `sendMessage`, `sendPhoto`, `editMessageText`, `editMessageReplyMarkup`, `deleteMessage`, `answerCallbackQuery`, `sendChatAction`, `sendMessageDraft`, `sendRichMessage`, `getCustomEmojiStickers` |
 | UI-rendered | The UI can display the result, but Telegram semantics may still be simplified. | entities, custom/premium emoji placeholders, HTML parse mode, rich-message tables, media chips, live typing status, streaming draft previews |
-| Compatibility stub | The official method name is accepted and returns deterministic success data so local bots keep running. | most admin, business, gifts, stars, games, passport, sticker-management, forum, and inline methods |
-| Not yet semantic | The method is recognized but does not yet emulate Telegram-side validation, state transitions, events, or edge cases. | payments, invoices, Stars, Mini Apps, inline mode, file downloads, business accounts, forum topics, games |
+| Compatibility stub | The official method name is accepted and returns deterministic success data so local bots keep running. | lower-priority admin, reaction, profile, sticker-management, and settings methods |
+| Not yet semantic | The method is recognized but does not yet emulate Telegram-side validation, state transitions, events, or edge cases. | payments, invoices, Stars, Mini Apps, inline mode, file downloads, business accounts, gifts, forum topics, games |
 
 The goal is to move high-value methods from `compatibility stub` to `stateful` in small,
 well-tested slices.
+
+Inspect the current matrix:
+
+```sh
+curl http://127.0.0.1:8080/_sim/coverage
+```
 
 ## Roadmap / Goals To SaaS
 
@@ -135,6 +144,11 @@ Still incomplete until:
   README.
 
 ### G1: v0.1 Public OSS Release Hardening
+
+Progress on `main`:
+
+- Done: `GET /_sim/coverage`.
+- Done: `--api-mode=compat|strict`.
 
 Definition of Done:
 
@@ -267,13 +281,17 @@ Still incomplete until:
 - Breaking-change policy, deprecation windows, and upgrade guides are in place.
 - Real users have validated the product with non-trivial bots before the `v1.0.0` tag.
 
-## Planned Simulator Interfaces
+## Simulator Interfaces
 
-These interfaces are not all implemented yet; they define the intended public shape for upcoming
-roadmap goals:
+Implemented:
 
 ```text
 GET  /_sim/coverage                 # Bot API coverage matrix
+```
+
+Planned:
+
+```text
 GET  /_sim/file/{id}                # stored media bytes
 POST /_sim/scenarios                # save a scenario
 POST /_sim/scenarios/{id}/run       # replay a scenario
@@ -284,7 +302,6 @@ POST /_sim/import                   # import session data
 Planned flags:
 
 ```text
---api-mode=compat|strict
 --persist=/path/to/session.sqlite
 --media-dir=/path/to/media
 --auth-mode=local|token|proxy-header
@@ -316,8 +333,15 @@ The showcase bot must use the same value.
 Defaults:
 
 ```text
-sim:          --bot-token dev-bot-token --addr 127.0.0.1:8080
+sim:          --bot-token dev-bot-token --addr 127.0.0.1:8080 --api-mode compat
 showcase-bot: --bot-token dev-bot-token --api-base http://127.0.0.1:8080
+```
+
+API modes:
+
+```text
+compat # default; recognized Bot API methods can fall back to deterministic stubs
+strict # non-semantic methods return HTTP 501 with an explicit simulator error
 ```
 
 To point your own bot at the simulator, set its Bot API base URL to:
@@ -349,6 +373,7 @@ Useful simulator endpoints:
 POST /_sim/inject   # inject message or callback_query
 GET  /_sim/state    # chats and messages
 GET  /_sim/traces   # trace ring snapshot
+GET  /_sim/coverage # Bot API coverage matrix and current api mode
 GET  /_sim/events   # SSE stream
 POST /_sim/reset    # clear chats, messages, pending updates, traces, and webhook state
 POST /_sim/traces/reset # clear traces only, keep chat state

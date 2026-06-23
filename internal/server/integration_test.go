@@ -307,6 +307,60 @@ func TestBotAPIFormattingRichMessagesAndRegistry(t *testing.T) {
 	}
 }
 
+func TestSimCoverageEndpoint(t *testing.T) {
+	st := store.NewMemory()
+	cfg := config.Config{Mode: config.ModeLocal, BotToken: "1234567890:aaaabbbbaaaabbbbaaaabbbbaaaabbbbccc", BufferSize: 100}
+	handler := NewWithStore(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), st)
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+
+	coverage := readSimResult[coverageReport](t, srv.URL+"/_sim/coverage")
+	if coverage.APIVersion != "10.1" || coverage.APIMode != config.APIModeCompat {
+		t.Fatalf("coverage metadata = %#v, want Bot API 10.1 compat", coverage)
+	}
+	if coverage.Summary.Total == 0 || coverage.Summary.Stateful == 0 || coverage.Summary.NotYetSemantic == 0 {
+		t.Fatalf("coverage summary = %#v, want populated levels", coverage.Summary)
+	}
+	if got := coverage.MethodLevel("sendMessage"); got != "stateful" {
+		t.Fatalf("sendMessage level = %q, want stateful", got)
+	}
+	if got := coverage.MethodLevel("sendVideo"); got != "ui_rendered" {
+		t.Fatalf("sendVideo level = %q, want ui_rendered", got)
+	}
+	if got := coverage.MethodLevel("sendInvoice"); got != "not_yet_semantic" {
+		t.Fatalf("sendInvoice level = %q, want not_yet_semantic", got)
+	}
+}
+
+func TestBotAPIStrictModeRejectsNonSemanticMethods(t *testing.T) {
+	st := store.NewMemory()
+	cfg := config.Config{Mode: config.ModeLocal, BotToken: "1234567890:aaaabbbbaaaabbbbaaaabbbbaaaabbbbccc", APIMode: config.APIModeStrict, BufferSize: 100}
+	handler := NewWithStore(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), st)
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+
+	okEnv := botCall(t, srv.URL, cfg.BotToken, "sendMessage", map[string]any{
+		"chat_id": 42,
+		"text":    "strict mode still allows stateful methods",
+	}, http.StatusOK)
+	if !okEnv.OK {
+		t.Fatalf("sendMessage response = %#v, want ok", okEnv)
+	}
+
+	rejectedEnv := botCall(t, srv.URL, cfg.BotToken, "sendInvoice", map[string]any{
+		"chat_id": 42,
+		"title":   "Demo invoice",
+	}, http.StatusNotImplemented)
+	if rejectedEnv.OK || rejectedEnv.ErrorCode != http.StatusNotImplemented || !strings.Contains(rejectedEnv.Description, "strict api mode") {
+		t.Fatalf("sendInvoice strict response = %#v, want strict 501", rejectedEnv)
+	}
+
+	coverage := readSimResult[coverageReport](t, srv.URL+"/_sim/coverage")
+	if coverage.APIMode != config.APIModeStrict {
+		t.Fatalf("coverage api mode = %q, want strict", coverage.APIMode)
+	}
+}
+
 func TestBotAPIChatActionAndDraftEvents(t *testing.T) {
 	st := store.NewMemory()
 	cfg := config.Config{Mode: config.ModeLocal, BotToken: "1234567890:aaaabbbbaaaabbbbaaaabbbbaaaabbbbccc", BufferSize: 100}
@@ -532,6 +586,29 @@ type callbackAnswerEventPayload struct {
 	CallbackQueryID string `json:"callback_query_id"`
 	Text            string `json:"text,omitempty"`
 	ShowAlert       bool   `json:"show_alert,omitempty"`
+}
+
+type coverageReport struct {
+	APIVersion string `json:"api_version"`
+	APIMode    string `json:"api_mode"`
+	Summary    struct {
+		Total          int `json:"total"`
+		Stateful       int `json:"stateful"`
+		NotYetSemantic int `json:"not_yet_semantic"`
+	} `json:"summary"`
+	Methods []struct {
+		Name  string `json:"name"`
+		Level string `json:"level"`
+	} `json:"methods"`
+}
+
+func (report coverageReport) MethodLevel(name string) string {
+	for _, method := range report.Methods {
+		if method.Name == name {
+			return method.Level
+		}
+	}
+	return ""
 }
 
 func botCall(t *testing.T, baseURL, token, method string, body any, wantStatus int) botAPIEnvelope {

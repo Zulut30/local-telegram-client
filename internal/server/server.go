@@ -34,6 +34,9 @@ func NewWithStore(cfg config.Config, logger *slog.Logger, st store.Store) http.H
 	mux.HandleFunc("POST /_sim/inject", simHandler.Inject)
 	mux.HandleFunc("GET /_sim/state", simHandler.State)
 	mux.HandleFunc("POST /_sim/reset", simHandler.Reset)
+	mux.HandleFunc("GET /_sim/coverage", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "result": botapi.Coverage(cfg.EffectiveAPIMode())})
+	})
 	mux.HandleFunc("GET /_sim/traces", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "result": recorder.Snapshot()})
 	})

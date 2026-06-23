@@ -77,6 +77,20 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.cfg.EffectiveAPIMode() == config.APIModeStrict && !StrictSupports(method) {
+		description := strictUnsupportedDescription(method)
+		if shouldTrace(method) {
+			h.recordCall(method, params, 0, responseMeta{
+				httpStatus: http.StatusNotImplemented,
+				ok:         false,
+				errorCode:  http.StatusNotImplemented,
+				errorDesc:  description,
+			})
+		}
+		writeError(w, http.StatusNotImplemented, http.StatusNotImplemented, description)
+		return
+	}
+
 	if shouldTrace(method) {
 		h.serveTraced(w, r, method, params)
 		return
