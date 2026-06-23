@@ -1,13 +1,29 @@
+import { useState } from 'react';
 import { ChatList } from './components/ChatList';
 import { Composer } from './components/Composer';
 import { MessageList } from './components/MessageList';
+import { QuickStartPanel } from './components/QuickStartPanel';
 import { TracePanel } from './components/TracePanel';
 import { useSimState } from './useSimState';
 import { useTraceState } from './useTraceState';
 
 export function App() {
   const sim = useSimState();
-  const traces = useTraceState();
+  const traceState = useTraceState();
+  const [resetting, setResetting] = useState(false);
+
+  async function resetEverything() {
+    if (resetting) {
+      return;
+    }
+    setResetting(true);
+    try {
+      await sim.reset();
+      await traceState.refresh();
+    } finally {
+      setResetting(false);
+    }
+  }
 
   return (
     <main className="shell">
@@ -22,16 +38,24 @@ export function App() {
           <div>
             <p className="eyebrow">Local Telegram</p>
             <h1>Bot Simulator</h1>
+            <p className="conversation__subtitle">Write as the user. The showcase bot answers here.</p>
           </div>
           <div className="conversation__status">
             {sim.callbackNotice ? <span className="status status--notice">{sim.callbackNotice}</span> : null}
             {sim.error ? <span className="status status--error">{sim.error}</span> : <span className="status">{sim.status}</span>}
           </div>
         </header>
+        <QuickStartPanel
+          hasMessages={sim.selectedMessages.length > 0}
+          traceCount={traceState.traces.length}
+          resetting={resetting}
+          onSend={sim.sendText}
+          onReset={resetEverything}
+        />
         <MessageList messages={sim.selectedMessages} onCallback={sim.sendCallback} onReplyText={sim.sendText} />
         <Composer onSend={sim.sendText} />
       </section>
-      <TracePanel traces={traces} />
+      <TracePanel traces={traceState.traces} />
     </main>
   );
 }

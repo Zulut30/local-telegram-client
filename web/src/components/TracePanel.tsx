@@ -13,7 +13,7 @@ function traceTitle(trace: Trace): string {
 
 function traceSubtitle(trace: Trace): string {
   if (trace.inbound) {
-    return `chat ${trace.inbound.chat_id}${trace.inbound.text ? ` · ${trace.inbound.text}` : ''}`;
+    return `chat ${trace.inbound.chat_id}${trace.inbound.text ? ` - ${trace.inbound.text}` : ''}`;
   }
   return (trace.calls ?? [])[0]?.method ?? 'no calls';
 }
@@ -24,9 +24,9 @@ function statusClass(status: string): string {
 
 function callSummary(call: OutboundCall): string {
   if (call.ok) {
-    return `${call.http_status} · ${call.latency_ms}ms`;
+    return `${call.http_status} - ${call.latency_ms}ms`;
   }
-  return `${call.http_status} · ${call.error_desc ?? 'error'}`;
+  return `${call.http_status} - ${call.error_desc ?? 'error'}`;
 }
 
 function ParamsPreview({ params }: { params?: Record<string, unknown> }) {
@@ -43,15 +43,26 @@ export function TracePanel({ traces }: TracePanelProps) {
     <aside className="trace-panel" aria-label="Trace stream">
       <header className="trace-panel__header">
         <div>
-          <p className="eyebrow">X-ray</p>
+          <p className="eyebrow">Bot API x-ray</p>
           <h2>Traces</h2>
+          <p>Each card connects one user update to the Bot API calls made in response.</p>
         </div>
         <span>{ordered.length}</span>
       </header>
       <div className="trace-panel__body">
-        {ordered.length === 0 ? <div className="empty empty--compact">No traces yet</div> : null}
-        {ordered.map((trace) => (
-          <details className="trace-card" key={trace.id} open={trace.status === 'open' || trace.status === 'error'}>
+        <div className="trace-panel__legend" aria-label="Trace legend">
+          <span>open = bot is handling</span>
+          <span>ok = request succeeded</span>
+          <span>error = inspect params</span>
+        </div>
+        {ordered.length === 0 ? (
+          <div className="empty empty--compact">
+            <strong>No traces yet</strong>
+            <span>Send /start in the chat. Bot calls will appear here.</span>
+          </div>
+        ) : null}
+        {ordered.map((trace, index) => (
+          <details className="trace-card" key={trace.id} open={index === 0 || trace.status === 'open' || trace.status === 'error'}>
             <summary>
               <span>
                 <strong>{traceTitle(trace)}</strong>

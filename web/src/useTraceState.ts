@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { loadTraces } from './api';
 import type { Trace, TraceEventPayload } from './types';
 
@@ -12,13 +12,16 @@ function upsertTrace(current: Trace[], trace: Trace): Trace[] {
 export function useTraceState() {
   const [traces, setTraces] = useState<Trace[]>([]);
 
+  const refresh = useCallback(async (signal?: AbortSignal) => {
+    const snapshot = await loadTraces(signal);
+    setTraces(snapshot.slice(-maxTraces));
+  }, []);
+
   useEffect(() => {
     const controller = new AbortController();
-    loadTraces(controller.signal)
-      .then((snapshot) => setTraces(snapshot.slice(-maxTraces)))
-      .catch(() => undefined);
+    refresh(controller.signal).catch(() => undefined);
     return () => controller.abort();
-  }, []);
+  }, [refresh]);
 
   useEffect(() => {
     const source = new EventSource('/_sim/events');
@@ -29,5 +32,5 @@ export function useTraceState() {
     return () => source.close();
   }, []);
 
-  return traces;
+  return { traces, refresh };
 }

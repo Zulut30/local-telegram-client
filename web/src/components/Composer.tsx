@@ -33,7 +33,7 @@ export function Composer({ onSend }: ComposerProps) {
         id="message-text"
         value={text}
         onChange={(event) => setText(event.target.value)}
-        placeholder="Message"
+        placeholder="Type as user"
         autoComplete="off"
       />
       <button type="submit" disabled={sending || text.trim() === ''}>

@@ -290,6 +290,44 @@ func TestSimResetClearsStateAndTraces(t *testing.T) {
 	}
 }
 
+func TestSimResetPreservesWebhookConfig(t *testing.T) {
+	st := store.NewMemory()
+	cfg := config.Config{Mode: config.ModeLocal, BotToken: "1234567890:aaaabbbbaaaabbbbaaaabbbbaaaabbbbccc", BufferSize: 100}
+	handler := NewWithStore(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), st)
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+
+	webhookSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(webhookSrv.Close)
+
+	bot, err := telego.NewBot(cfg.BotToken, telego.WithAPIServer(srv.URL), telego.WithDiscardLogger())
+	if err != nil {
+		t.Fatalf("NewBot returned error: %v", err)
+	}
+	if err := bot.SetWebhook(&telego.SetWebhookParams{URL: webhookSrv.URL}); err != nil {
+		t.Fatalf("SetWebhook returned error: %v", err)
+	}
+
+	resetResp, err := http.Post(srv.URL+"/_sim/reset", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatalf("reset request failed: %v", err)
+	}
+	_ = resetResp.Body.Close()
+	if resetResp.StatusCode != http.StatusOK {
+		t.Fatalf("reset status = %d, want 200", resetResp.StatusCode)
+	}
+
+	info, err := bot.GetWebhookInfo()
+	if err != nil {
+		t.Fatalf("GetWebhookInfo returned error: %v", err)
+	}
+	if info.URL != webhookSrv.URL {
+		t.Fatalf("webhook URL after reset = %q, want %q", info.URL, webhookSrv.URL)
+	}
+}
+
 type botAPIEnvelope struct {
 	OK          bool            `json:"ok"`
 	Result      json.RawMessage `json:"result,omitempty"`

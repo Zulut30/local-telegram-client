@@ -143,9 +143,6 @@ func (h *Handler) State(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Reset(w http.ResponseWriter, r *http.Request) {
-	if h.webhooks != nil {
-		h.webhooks.Delete()
-	}
 	if err := h.store.Reset(r.Context()); err != nil {
 		h.logger.Error("reset store", "error", err)
 		writeError(w, http.StatusInternalServerError, "reset store")

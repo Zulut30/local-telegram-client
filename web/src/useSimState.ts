@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { injectCallback, injectText, loadState } from './api';
+import { injectCallback, injectText, loadState, resetSession } from './api';
 import type { CallbackAnswerEventPayload, Chat, Message, MessageEventPayload, SimState } from './types';
 
 const fallbackChat: Chat = {
@@ -26,6 +26,10 @@ function applyMessage(state: SimState, payload: MessageEventPayload): SimState {
       [key]: nextMessages,
     },
   };
+}
+
+function errorMessage(err: unknown, fallback: string): string {
+  return err instanceof Error ? err.message : fallback;
 }
 
 export function useSimState() {
@@ -102,8 +106,12 @@ export function useSimState() {
   const sendText = useCallback(
     async (text: string) => {
       setError(null);
-      await injectText(selectedChatID, text);
-      await refresh();
+      try {
+        await injectText(selectedChatID, text);
+        await refresh();
+      } catch (err) {
+        setError(errorMessage(err, 'Failed to send message'));
+      }
     },
     [refresh, selectedChatID],
   );
@@ -111,10 +119,27 @@ export function useSimState() {
   const sendCallback = useCallback(
     async (message: Message, data: string) => {
       setError(null);
-      await injectCallback(message, data);
+      try {
+        await injectCallback(message, data);
+      } catch (err) {
+        setError(errorMessage(err, 'Failed to send callback'));
+      }
     },
     [],
   );
+
+  const reset = useCallback(async () => {
+    setError(null);
+    try {
+      await resetSession();
+      setCallbackNotice(null);
+      setState({ chats: [], messages: {} });
+      setSelectedChatID(fallbackChat.id);
+      await refresh();
+    } catch (err) {
+      setError(errorMessage(err, 'Failed to reset session'));
+    }
+  }, [refresh]);
 
   return {
     chats,
@@ -126,5 +151,6 @@ export function useSimState() {
     setSelectedChatID,
     sendText,
     sendCallback,
+    reset,
   };
 }

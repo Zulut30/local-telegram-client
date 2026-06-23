@@ -24,7 +24,12 @@ function messageTime(message: Message): string {
 export function MessageList({ messages, onCallback, onReplyText }: MessageListProps) {
   return (
     <div className="messages" aria-live="polite">
-      {messages.length === 0 ? <div className="empty">No messages yet</div> : null}
+      {messages.length === 0 ? (
+        <div className="empty empty--chat">
+          <strong>No messages yet</strong>
+          <span>Use "Send /start" above or type in the composer below.</span>
+        </div>
+      ) : null}
       {messages.map((message) => {
         const fromBot = Boolean(message.from?.is_bot);
         return (

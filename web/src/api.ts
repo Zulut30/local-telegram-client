@@ -18,6 +18,15 @@ export async function loadTraces(signal?: AbortSignal): Promise<Trace[]> {
   return readResponse<Trace[]>(response);
 }
 
+export async function resetSession(): Promise<void> {
+  const response = await fetch('/_sim/reset', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+  });
+  await readResponse<boolean>(response);
+}
+
 export async function injectText(chatID: number, text: string): Promise<void> {
   const response = await fetch('/_sim/inject', {
     method: 'POST',

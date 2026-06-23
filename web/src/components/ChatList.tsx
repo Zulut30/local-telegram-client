@@ -15,8 +15,14 @@ export function ChatList({ chats, selectedChatID, status, onSelect }: ChatListPr
   return (
     <aside className="chat-list" aria-label="Chats">
       <div className="chat-list__brand">
-        <strong>Chats</strong>
-        <span data-state={status}>{status}</span>
+        <span>
+          <strong>Chats</strong>
+          <small>User sessions</small>
+        </span>
+        <span className="chat-list__state" data-state={status}>{status}</span>
+      </div>
+      <div className="chat-list__hint">
+        Pick the simulated user chat. New chats appear when you inject messages with another chat id.
       </div>
       <nav className="chat-list__items">
         {chats.map((chat) => (
