@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"hash/fnv"
 	"sort"
 	"strconv"
 	"sync"
@@ -13,6 +15,7 @@ import (
 
 type Store interface {
 	InjectText(ctx context.Context, input TextInput) (tg.Update, error)
+	InjectPhoto(ctx context.Context, input PhotoInput) (tg.Update, error)
 	InjectCallback(ctx context.Context, input CallbackInput) (tg.Update, error)
 	GetUpdates(ctx context.Context, offset int64, limit int, timeout time.Duration) ([]tg.Update, error)
 	AckUpdates(ctx context.Context, offset int64) error
@@ -32,6 +35,15 @@ type TextInput struct {
 	Text      string
 }
 
+type PhotoInput struct {
+	ChatID    int64
+	UserID    int64
+	Username  string
+	FirstName string
+	Caption   string
+	PhotoURL  string
+}
+
 type CallbackInput struct {
 	ChatID    int64
 	MessageID int64
@@ -45,6 +57,9 @@ type BotMessageInput struct {
 	From             tg.User
 	ChatID           int64
 	Text             string
+	Caption          string
+	Photo            []tg.PhotoSize
+	PhotoURL         string
 	ReplyMarkup      json.RawMessage
 	ReplyToMessageID int64
 }
@@ -114,6 +129,50 @@ func (m *Memory) InjectText(_ context.Context, input TextInput) (tg.Update, erro
 		Chat:      chat,
 		Date:      time.Now().Unix(),
 		Text:      input.Text,
+	}
+	m.nextMessageID++
+	m.messages[chat.ID] = append(m.messages[chat.ID], msg)
+
+	update := tg.Update{
+		UpdateID: m.nextUpdateID,
+		Message:  &msg,
+	}
+	m.nextUpdateID++
+	m.updates = append(m.updates, update)
+	m.signalLocked()
+
+	return update, nil
+}
+
+func (m *Memory) InjectPhoto(_ context.Context, input PhotoInput) (tg.Update, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if input.ChatID == 0 {
+		input.ChatID = 1
+	}
+	if input.UserID == 0 {
+		input.UserID = input.ChatID
+	}
+	if input.FirstName == "" {
+		input.FirstName = "Developer"
+	}
+
+	chat := m.chatLocked(input.ChatID, input.Username, input.FirstName)
+	user := tg.User{
+		ID:        input.UserID,
+		IsBot:     false,
+		FirstName: input.FirstName,
+		Username:  input.Username,
+	}
+	msg := tg.Message{
+		MessageID: m.nextMessageID,
+		From:      &user,
+		Chat:      chat,
+		Date:      time.Now().Unix(),
+		Caption:   input.Caption,
+		Photo:     photoSizes(input.PhotoURL),
+		PhotoURL:  input.PhotoURL,
 	}
 	m.nextMessageID++
 	m.messages[chat.ID] = append(m.messages[chat.ID], msg)
@@ -222,7 +281,13 @@ func (m *Memory) SaveBotMessage(_ context.Context, input BotMessageInput) (tg.Me
 		Chat:        chat,
 		Date:        time.Now().Unix(),
 		Text:        input.Text,
+		Caption:     input.Caption,
+		Photo:       input.Photo,
+		PhotoURL:    input.PhotoURL,
 		ReplyMarkup: input.ReplyMarkup,
+	}
+	if len(msg.Photo) == 0 && msg.PhotoURL != "" {
+		msg.Photo = photoSizes(msg.PhotoURL)
 	}
 	m.nextMessageID++
 	m.messages[chat.ID] = append(m.messages[chat.ID], msg)
@@ -382,4 +447,21 @@ func (m *Memory) pendingLocked(offset int64, limit int) []tg.Update {
 func (m *Memory) signalLocked() {
 	close(m.notify)
 	m.notify = make(chan struct{})
+}
+
+func photoSizes(photoURL string) []tg.PhotoSize {
+	if photoURL == "" {
+		return nil
+	}
+	hash := fnv.New32a()
+	_, _ = hash.Write([]byte(photoURL))
+	id := fmt.Sprintf("photo_%08x", hash.Sum32())
+	return []tg.PhotoSize{
+		{
+			FileID:       id,
+			FileUniqueID: id + "_unique",
+			Width:        640,
+			Height:       480,
+		},
+	}
 }

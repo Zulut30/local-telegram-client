@@ -70,6 +70,14 @@ func (c *APIClient) SendMessage(params *telego.SendMessageParams) (*telego.Messa
 	return &message, nil
 }
 
+func (c *APIClient) SendPhoto(params *telego.SendPhotoParams) (*telego.Message, error) {
+	var message telego.Message
+	if err := c.call("sendPhoto", params, &message); err != nil {
+		return nil, err
+	}
+	return &message, nil
+}
+
 func (c *APIClient) AnswerCallbackQuery(params *telego.AnswerCallbackQueryParams) error {
 	return c.call("answerCallbackQuery", params, nil)
 }

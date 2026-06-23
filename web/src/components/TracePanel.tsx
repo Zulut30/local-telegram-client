@@ -43,8 +43,8 @@ export function TracePanel({ traces }: TracePanelProps) {
     <aside className="trace-panel" aria-label="Trace stream">
       <header className="trace-panel__header">
         <div>
-          <p className="eyebrow">Bot API x-ray</p>
-          <h2>Traces</h2>
+          <p className="eyebrow">Bot API console</p>
+          <h2>Console</h2>
           <p>Each card connects one user update to the Bot API calls made in response.</p>
         </div>
         <span>{ordered.length}</span>

@@ -42,6 +42,22 @@ export async function injectText(chatID: number, text: string): Promise<void> {
   await readResponse<unknown>(response);
 }
 
+export async function injectPhoto(chatID: number, photoURL: string, caption: string): Promise<void> {
+  const response = await fetch('/_sim/inject', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      type: 'photo',
+      chat_id: chatID,
+      user_id: chatID,
+      username: 'developer',
+      photo_url: photoURL,
+      caption,
+    }),
+  });
+  await readResponse<unknown>(response);
+}
+
 export async function injectCallback(message: Message, data: string): Promise<void> {
   const response = await fetch('/_sim/inject', {
     method: 'POST',

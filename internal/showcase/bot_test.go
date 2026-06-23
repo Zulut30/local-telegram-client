@@ -19,15 +19,15 @@ func TestHandleStartSendsInlineKeyboard(t *testing.T) {
 		t.Fatalf("sent messages = %d, want 1", len(client.sent))
 	}
 	msg := client.sent[0]
-	if !strings.Contains(msg.Text, "Showcase bot is ready") {
-		t.Fatalf("start text = %q, want showcase intro", msg.Text)
+	if !strings.Contains(msg.Text, "Recipe bot is ready") {
+		t.Fatalf("start text = %q, want recipe intro", msg.Text)
 	}
 	markup, ok := msg.ReplyMarkup.(*telego.InlineKeyboardMarkup)
 	if !ok {
 		t.Fatalf("reply markup = %T, want inline keyboard", msg.ReplyMarkup)
 	}
-	if got := markup.InlineKeyboard[0][0].CallbackData; got != CallbackEdit {
-		t.Fatalf("first callback = %q, want %q", got, CallbackEdit)
+	if got := markup.InlineKeyboard[0][0].CallbackData; got != CallbackRecipeList {
+		t.Fatalf("first callback = %q, want %q", got, CallbackRecipeList)
 	}
 }
 
@@ -58,6 +58,49 @@ func TestHandleTextEchoAndReplyCommands(t *testing.T) {
 	}
 	if !triggered {
 		t.Fatal("trace error trigger was not called")
+	}
+}
+
+func TestRecipeCallbackSendsPhoto(t *testing.T) {
+	client := &fakeClient{}
+	bot := New(client, nil)
+
+	if err := bot.Handle(callbackUpdate(42, 10, "cb_1", CallbackRecipePrefix+"arrabiata")); err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if len(client.answered) != 1 {
+		t.Fatalf("answered = %d, want 1", len(client.answered))
+	}
+	if len(client.photos) != 1 {
+		t.Fatalf("photos = %d, want 1", len(client.photos))
+	}
+	photo := client.photos[0]
+	if photo.Photo.URL == "" {
+		t.Fatalf("photo URL is empty")
+	}
+	if !strings.Contains(photo.Caption, "Spicy Arrabiata Penne") {
+		t.Fatalf("photo caption = %q, want recipe name", photo.Caption)
+	}
+	if _, ok := photo.ReplyMarkup.(*telego.InlineKeyboardMarkup); !ok {
+		t.Fatalf("reply markup = %T, want inline keyboard", photo.ReplyMarkup)
+	}
+}
+
+func TestPhotoMessageSuggestsRecipes(t *testing.T) {
+	client := &fakeClient{}
+	bot := New(client, nil)
+
+	if err := bot.Handle(photoUpdate(42, "lunch")); err != nil {
+		t.Fatalf("Handle returned error: %v", err)
+	}
+	if len(client.sent) != 1 {
+		t.Fatalf("sent messages = %d, want 1", len(client.sent))
+	}
+	if !strings.Contains(client.sent[0].Text, "received it as a Telegram photo update") {
+		t.Fatalf("photo response = %q, want photo acknowledgement", client.sent[0].Text)
+	}
+	if _, ok := client.sent[0].ReplyMarkup.(*telego.InlineKeyboardMarkup); !ok {
+		t.Fatalf("reply markup = %T, want recipe inline keyboard", client.sent[0].ReplyMarkup)
 	}
 }
 
@@ -149,6 +192,7 @@ func TestHandleCallbacks(t *testing.T) {
 
 type fakeClient struct {
 	sent           []*telego.SendMessageParams
+	photos         []*telego.SendPhotoParams
 	answered       []*telego.AnswerCallbackQueryParams
 	edited         []*telego.EditMessageTextParams
 	deleted        []*telego.DeleteMessageParams
@@ -163,6 +207,19 @@ func (f *fakeClient) SendMessage(params *telego.SendMessageParams) (*telego.Mess
 		MessageID: f.nextMessageID,
 		Chat:      telego.Chat{ID: params.ChatID.ID, Type: "private"},
 		Text:      params.Text,
+	}, nil
+}
+
+func (f *fakeClient) SendPhoto(params *telego.SendPhotoParams) (*telego.Message, error) {
+	f.nextMessageID++
+	f.photos = append(f.photos, params)
+	return &telego.Message{
+		MessageID: f.nextMessageID,
+		Chat:      telego.Chat{ID: params.ChatID.ID, Type: "private"},
+		Caption:   params.Caption,
+		Photo: []telego.PhotoSize{
+			{FileID: "photo_id", FileUniqueID: "photo_unique", Width: 640, Height: 480},
+		},
 	}, nil
 }
 
@@ -192,6 +249,20 @@ func messageUpdate(chatID int64, text string) telego.Update {
 			MessageID: 1,
 			Chat:      telego.Chat{ID: chatID, Type: "private"},
 			Text:      text,
+		},
+	}
+}
+
+func photoUpdate(chatID int64, caption string) telego.Update {
+	return telego.Update{
+		UpdateID: 1,
+		Message: &telego.Message{
+			MessageID: 1,
+			Chat:      telego.Chat{ID: chatID, Type: "private"},
+			Caption:   caption,
+			Photo: []telego.PhotoSize{
+				{FileID: "photo_id", FileUniqueID: "photo_unique", Width: 640, Height: 480},
+			},
 		},
 	}
 }

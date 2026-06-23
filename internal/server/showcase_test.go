@@ -164,7 +164,7 @@ func assertShowcaseMessage(t *testing.T, st *store.Memory, chatID int64) {
 	}
 	messages := state.Messages[strconv.FormatInt(chatID, 10)]
 	for _, message := range messages {
-		if strings.Contains(message.Text, "Showcase bot is ready") {
+		if strings.Contains(message.Text, "Recipe bot is ready") {
 			return
 		}
 	}

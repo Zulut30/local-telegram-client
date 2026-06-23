@@ -32,13 +32,15 @@ export function MessageList({ messages, onCallback, onReplyText }: MessageListPr
       ) : null}
       {messages.map((message) => {
         const fromBot = Boolean(message.from?.is_bot);
+        const body = message.text || message.caption;
         return (
           <article className={fromBot ? 'message message--bot' : 'message message--user'} key={message.message_id}>
             <div className="message__meta">
               <strong>{senderName(message)}</strong>
               <time dateTime={new Date(message.date * 1000).toISOString()}>{messageTime(message)}</time>
             </div>
-            {message.text ? <p>{message.text}</p> : null}
+            {message.photo_url ? <img className="message__photo" src={message.photo_url} alt={body || 'Telegram photo'} /> : null}
+            {body ? <p>{body}</p> : null}
             <Keyboard message={message} markup={message.reply_markup} onCallback={onCallback} onReplyText={onReplyText} />
           </article>
         );

@@ -92,6 +92,8 @@ func (h *Handler) dispatch(w http.ResponseWriter, r *http.Request, method string
 		h.handleGetWebhookInfo(w)
 	case "sendMessage":
 		h.handleSendMessage(w, r, params)
+	case "sendPhoto":
+		h.handleSendPhoto(w, r, params)
 	case "editMessageText":
 		h.handleEditMessageText(w, r, params)
 	case "editMessageReplyMarkup":
@@ -293,6 +295,45 @@ func (h *Handler) handleSendMessage(w http.ResponseWriter, r *http.Request, para
 	if h.hub != nil {
 		h.hub.Broadcast("message", map[string]any{"op": "created", "message": msg})
 	}
+	writeOK(w, msg)
+}
+
+func (h *Handler) handleSendPhoto(w http.ResponseWriter, r *http.Request, params parameters) {
+	chatID, err := params.Int64("chat_id", 0)
+	if err != nil || chatID == 0 {
+		writeError(w, http.StatusBadRequest, 400, "chat_id is required")
+		return
+	}
+	photo, _ := params.String("photo", "")
+	if photo == "" {
+		writeError(w, http.StatusBadRequest, 400, "photo is required")
+		return
+	}
+	caption, _ := params.String("caption", "")
+	replyToMessageID, err := params.Int64("reply_to_message_id", 0)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, 400, "reply_to_message_id must be an integer")
+		return
+	}
+	replyMarkup, err := params.RawJSON("reply_markup")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, 400, "reply_markup must be valid JSON")
+		return
+	}
+
+	msg, err := h.store.SaveBotMessage(r.Context(), store.BotMessageInput{
+		From:             h.bot,
+		ChatID:           chatID,
+		Caption:          caption,
+		PhotoURL:         photo,
+		ReplyMarkup:      replyMarkup,
+		ReplyToMessageID: replyToMessageID,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, 500, err.Error())
+		return
+	}
+	h.broadcastMessage("created", msg)
 	writeOK(w, msg)
 }
 

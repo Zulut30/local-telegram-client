@@ -28,6 +28,8 @@ type injectRequest struct {
 	Username  string `json:"username"`
 	FirstName string `json:"first_name"`
 	Text      string `json:"text"`
+	Caption   string `json:"caption"`
+	PhotoURL  string `json:"photo_url"`
 	MessageID int64  `json:"message_id"`
 	Data      string `json:"data"`
 }
@@ -50,6 +52,8 @@ func (h *Handler) Inject(w http.ResponseWriter, r *http.Request) {
 	switch req.Type {
 	case "", "message", "text":
 		h.injectText(w, r, req)
+	case "photo":
+		h.injectPhoto(w, r, req)
 	case "callback_query", "callback":
 		h.injectCallback(w, r, req)
 	default:
@@ -73,6 +77,34 @@ func (h *Handler) injectText(w http.ResponseWriter, r *http.Request, req injectR
 	if err != nil {
 		h.logger.Error("inject text", "error", err)
 		writeError(w, http.StatusInternalServerError, "inject text")
+		return
+	}
+	if h.hub != nil && update.Message != nil {
+		h.hub.Broadcast("message", map[string]any{"op": "created", "message": update.Message})
+	}
+	if !h.deliverWebhook(w, r, update) {
+		return
+	}
+	writeJSON(w, http.StatusOK, response{OK: true, Result: update})
+}
+
+func (h *Handler) injectPhoto(w http.ResponseWriter, r *http.Request, req injectRequest) {
+	if req.PhotoURL == "" {
+		writeError(w, http.StatusBadRequest, "photo_url is required")
+		return
+	}
+
+	update, err := h.store.InjectPhoto(r.Context(), store.PhotoInput{
+		ChatID:    req.ChatID,
+		UserID:    req.UserID,
+		Username:  req.Username,
+		FirstName: req.FirstName,
+		Caption:   req.Caption,
+		PhotoURL:  req.PhotoURL,
+	})
+	if err != nil {
+		h.logger.Error("inject photo", "error", err)
+		writeError(w, http.StatusInternalServerError, "inject photo")
 		return
 	}
 	if h.hub != nil && update.Message != nil {

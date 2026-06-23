@@ -296,11 +296,18 @@ func (r *Recorder) broadcast(op string, trace Trace) {
 
 func inboundFromUpdate(update tg.Update) (InboundEvent, bool) {
 	if update.Message != nil {
+		text := update.Message.Text
+		if text == "" && len(update.Message.Photo) > 0 {
+			text = "[photo]"
+			if update.Message.Caption != "" {
+				text += " " + update.Message.Caption
+			}
+		}
 		return InboundEvent{
 			UpdateID: update.UpdateID,
 			Type:     "message",
 			ChatID:   update.Message.Chat.ID,
-			Text:     update.Message.Text,
+			Text:     text,
 			At:       time.Now().UTC(),
 		}, true
 	}

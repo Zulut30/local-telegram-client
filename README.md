@@ -31,8 +31,13 @@ In a second terminal, start the showcase bot:
 ./bin/showcase-bot --mode polling
 ```
 
-Send `/start` in the browser chat. The showcase bot will respond with inline buttons for edit,
+Send `/start` in the browser chat. The showcase bot opens a recipe catalog with photo cards,
+ingredients, steps, source links, reply keyboard controls, and a `Dev tools` section for edit,
 toast, temporary delete, reply keyboard, and trace error scenarios.
+
+The browser UI works like a small IDE: use the top bar to hide/show Chats, Guide, and Console,
+switch Light/Dark theme, and use the attachment button in the composer to send a photo update
+with an optional caption.
 
 ## Webhook Demo
 
@@ -47,6 +52,22 @@ Stop the polling showcase bot and start webhook mode:
 
 Send `/start` again in the browser. The simulator will deliver the update to the showcase bot through
 `setWebhook`, and the trace panel will show the inbound update plus the bot's outgoing calls.
+
+## Recipe Showcase Bot
+
+The bundled showcase bot is a small food recipe bot backed by static demo data from
+[TheMealDB](https://www.themealdb.com/). It exercises:
+
+- `sendMessage` for menus, ingredients, steps, echo, and photo acknowledgements.
+- `sendPhoto` for recipe cards with remote image URLs.
+- `answerCallbackQuery`, `editMessageText`, `deleteMessage`, reply keyboards, polling, webhook, and trace errors.
+- User photo injection through the UI attachment button.
+
+Included recipe sources:
+
+- [Spicy Arrabiata Penne](https://www.themealdb.com/meal/52771-spicy-arrabiata-penne-recipe)
+- [Chicken Handi](https://www.themealdb.com/meal/52795-chicken-handi-recipe)
+- [Beef and Mustard Pie](https://www.themealdb.com/meal/52874-beef-and-mustard-pie-recipe)
 
 ## Make Targets
 

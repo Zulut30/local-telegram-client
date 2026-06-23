@@ -25,7 +25,18 @@ type Message struct {
 	Chat        Chat            `json:"chat"`
 	Date        int64           `json:"date"`
 	Text        string          `json:"text,omitempty"`
+	Caption     string          `json:"caption,omitempty"`
+	Photo       []PhotoSize     `json:"photo,omitempty"`
+	PhotoURL    string          `json:"photo_url,omitempty"`
 	ReplyMarkup json.RawMessage `json:"reply_markup,omitempty"`
+}
+
+type PhotoSize struct {
+	FileID       string `json:"file_id"`
+	FileUniqueID string `json:"file_unique_id"`
+	Width        int    `json:"width"`
+	Height       int    `json:"height"`
+	FileSize     int    `json:"file_size,omitempty"`
 }
 
 type Update struct {

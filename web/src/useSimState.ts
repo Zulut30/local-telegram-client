@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { injectCallback, injectText, loadState, resetSession } from './api';
+import { injectCallback, injectPhoto, injectText, loadState, resetSession } from './api';
 import type { CallbackAnswerEventPayload, Chat, Message, MessageEventPayload, SimState } from './types';
 
 const fallbackChat: Chat = {
@@ -116,16 +116,30 @@ export function useSimState() {
     [refresh, selectedChatID],
   );
 
+  const sendPhoto = useCallback(
+    async (photoURL: string, caption: string) => {
+      setError(null);
+      try {
+        await injectPhoto(selectedChatID, photoURL, caption);
+        await refresh();
+      } catch (err) {
+        setError(errorMessage(err, 'Failed to send photo'));
+      }
+    },
+    [refresh, selectedChatID],
+  );
+
   const sendCallback = useCallback(
     async (message: Message, data: string) => {
       setError(null);
       try {
         await injectCallback(message, data);
+        await refresh();
       } catch (err) {
         setError(errorMessage(err, 'Failed to send callback'));
       }
     },
-    [],
+    [refresh],
   );
 
   const reset = useCallback(async () => {
@@ -150,6 +164,7 @@ export function useSimState() {
     callbackNotice,
     setSelectedChatID,
     sendText,
+    sendPhoto,
     sendCallback,
     reset,
   };
