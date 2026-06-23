@@ -9,6 +9,7 @@ import (
 	"github.com/Zulut30/local-telegram-client/internal/events"
 	"github.com/Zulut30/local-telegram-client/internal/store"
 	"github.com/Zulut30/local-telegram-client/internal/tg"
+	tracing "github.com/Zulut30/local-telegram-client/internal/trace"
 	"github.com/Zulut30/local-telegram-client/internal/webhook"
 )
 
@@ -16,6 +17,7 @@ type Handler struct {
 	store    store.Store
 	logger   *slog.Logger
 	hub      *events.Hub
+	recorder *tracing.Recorder
 	webhooks *webhook.Manager
 }
 
@@ -35,8 +37,8 @@ type response struct {
 	Result any  `json:"result,omitempty"`
 }
 
-func New(st store.Store, logger *slog.Logger, hub *events.Hub, webhooks *webhook.Manager) *Handler {
-	return &Handler{store: st, logger: logger, hub: hub, webhooks: webhooks}
+func New(st store.Store, logger *slog.Logger, hub *events.Hub, recorder *tracing.Recorder, webhooks *webhook.Manager) *Handler {
+	return &Handler{store: st, logger: logger, hub: hub, recorder: recorder, webhooks: webhooks}
 }
 
 func (h *Handler) Inject(w http.ResponseWriter, r *http.Request) {
@@ -138,6 +140,21 @@ func (h *Handler) State(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, response{OK: true, Result: state})
+}
+
+func (h *Handler) Reset(w http.ResponseWriter, r *http.Request) {
+	if h.webhooks != nil {
+		h.webhooks.Delete()
+	}
+	if err := h.store.Reset(r.Context()); err != nil {
+		h.logger.Error("reset store", "error", err)
+		writeError(w, http.StatusInternalServerError, "reset store")
+		return
+	}
+	if h.recorder != nil {
+		h.recorder.Reset()
+	}
+	writeJSON(w, http.StatusOK, response{OK: true, Result: true})
 }
 
 func writeError(w http.ResponseWriter, status int, description string) {

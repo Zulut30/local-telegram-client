@@ -2,9 +2,11 @@
 
 ## Commands
 
-- `make build` builds the simulator binary.
+- `make build` builds the simulator and showcase bot binaries.
 - `make test` runs `go vet ./... && go test ./...`.
 - `make run` starts the simulator in local mode.
+- `make run-showcase` starts the showcase bot in polling mode.
+- `make run-showcase-webhook` starts the showcase bot in webhook mode.
 - `make build-frontend` builds the Vite frontend into `internal/webui/dist`.
 
 ## Rules

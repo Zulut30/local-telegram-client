@@ -1,0 +1,23 @@
+[Unit]
+Description=Local Telegram Client simulator
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=local-telegram-client
+Group=local-telegram-client
+Environment=SIM_MODE=remote
+Environment=SIM_ADDR=127.0.0.1:8080
+Environment=SIM_TOKEN=change-me
+Environment=SIM_BOT_TOKEN=dev-bot-token
+ExecStart=/usr/local/bin/sim
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

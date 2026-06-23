@@ -192,6 +192,23 @@ func (r *Recorder) Snapshot() []Trace {
 	return out
 }
 
+func (r *Recorder) Reset() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for id, timer := range r.timers {
+		if timer != nil {
+			timer.Stop()
+		}
+		delete(r.timers, id)
+	}
+	r.nextID = 1
+	r.ring = nil
+	r.traces = make(map[string]*Trace)
+	r.activeByChat = make(map[int64]string)
+	r.activeByCB = make(map[string]string)
+}
+
 func (r *Recorder) open(inbound InboundEvent) string {
 	r.mu.Lock()
 	trace := r.newTraceLocked(&inbound, false)

@@ -30,9 +30,10 @@ func NewWithStore(cfg config.Config, logger *slog.Logger, st store.Store) http.H
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", healthz)
-	simHandler := sim.New(st, logger, hub, webhooks)
+	simHandler := sim.New(st, logger, hub, recorder, webhooks)
 	mux.HandleFunc("POST /_sim/inject", simHandler.Inject)
 	mux.HandleFunc("GET /_sim/state", simHandler.State)
+	mux.HandleFunc("POST /_sim/reset", simHandler.Reset)
 	mux.HandleFunc("GET /_sim/traces", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "result": recorder.Snapshot()})
 	})

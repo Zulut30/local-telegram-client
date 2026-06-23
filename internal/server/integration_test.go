@@ -223,6 +223,73 @@ func TestBotAPIMessageMutationsAndCallbackAnswerEvents(t *testing.T) {
 	}
 }
 
+func TestSimResetClearsStateAndTraces(t *testing.T) {
+	st := store.NewMemory()
+	cfg := config.Config{Mode: config.ModeLocal, BotToken: "1234567890:aaaabbbbaaaabbbbaaaabbbbaaaabbbbccc", BufferSize: 100}
+	handler := NewWithStore(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), st)
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+
+	bot, err := telego.NewBot(cfg.BotToken, telego.WithAPIServer(srv.URL), telego.WithDiscardLogger())
+	if err != nil {
+		t.Fatalf("NewBot returned error: %v", err)
+	}
+
+	resp, err := http.Post(srv.URL+"/_sim/inject", "application/json", strings.NewReader(`{"type":"message","chat_id":42,"user_id":7,"text":"/start"}`))
+	if err != nil {
+		t.Fatalf("inject request failed: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("inject status = %d, want 200", resp.StatusCode)
+	}
+
+	updates, err := bot.GetUpdates(&telego.GetUpdatesParams{Limit: 10, Timeout: 1})
+	if err != nil {
+		t.Fatalf("GetUpdates returned error: %v", err)
+	}
+	if len(updates) != 1 {
+		t.Fatalf("updates length = %d, want 1", len(updates))
+	}
+	if _, err := bot.SendMessage(&telego.SendMessageParams{ChatID: telego.ChatID{ID: 42}, Text: "before reset"}); err != nil {
+		t.Fatalf("SendMessage returned error: %v", err)
+	}
+
+	tracesBefore := readSimResult[[]any](t, srv.URL+"/_sim/traces")
+	if len(tracesBefore) == 0 {
+		t.Fatal("traces before reset length = 0, want at least 1")
+	}
+
+	resetResp, err := http.Post(srv.URL+"/_sim/reset", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatalf("reset request failed: %v", err)
+	}
+	_ = resetResp.Body.Close()
+	if resetResp.StatusCode != http.StatusOK {
+		t.Fatalf("reset status = %d, want 200", resetResp.StatusCode)
+	}
+
+	state, err := st.State(context.Background())
+	if err != nil {
+		t.Fatalf("State returned error: %v", err)
+	}
+	if len(state.Chats) != 0 || len(state.Messages) != 0 {
+		t.Fatalf("state after reset = %#v, want empty", state)
+	}
+	tracesAfter := readSimResult[[]any](t, srv.URL+"/_sim/traces")
+	if len(tracesAfter) != 0 {
+		t.Fatalf("traces after reset length = %d, want 0", len(tracesAfter))
+	}
+
+	updatesAfter, err := bot.GetUpdates(&telego.GetUpdatesParams{Limit: 10, Timeout: 0})
+	if err != nil {
+		t.Fatalf("GetUpdates after reset returned error: %v", err)
+	}
+	if len(updatesAfter) != 0 {
+		t.Fatalf("updates after reset length = %d, want 0", len(updatesAfter))
+	}
+}
+
 type botAPIEnvelope struct {
 	OK          bool            `json:"ok"`
 	Result      json.RawMessage `json:"result,omitempty"`
@@ -290,4 +357,26 @@ func decodeBotResult[T any](t *testing.T, env botAPIEnvelope) T {
 
 func rawJSONContains(raw json.RawMessage, needle string) bool {
 	return strings.Contains(string(raw), needle)
+}
+
+func readSimResult[T any](t *testing.T, url string) T {
+	t.Helper()
+
+	resp, err := http.Get(url)
+	if err != nil {
+		t.Fatalf("GET %s failed: %v", url, err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read %s response: %v", url, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET %s status = %d, body = %s", url, resp.StatusCode, body)
+	}
+	var env botAPIEnvelope
+	if err := json.Unmarshal(body, &env); err != nil {
+		t.Fatalf("decode %s response %q: %v", url, body, err)
+	}
+	return decodeBotResult[T](t, env)
 }
