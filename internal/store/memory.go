@@ -57,9 +57,16 @@ type BotMessageInput struct {
 	From             tg.User
 	ChatID           int64
 	Text             string
+	Entities         []tg.MessageEntity
+	ParseMode        string
 	Caption          string
+	CaptionEntities  []tg.MessageEntity
+	CaptionParseMode string
 	Photo            []tg.PhotoSize
 	PhotoURL         string
+	MediaKind        string
+	MediaURL         string
+	RichMessage      json.RawMessage
 	ReplyMarkup      json.RawMessage
 	ReplyToMessageID int64
 }
@@ -68,6 +75,9 @@ type EditMessageTextInput struct {
 	ChatID      int64
 	MessageID   int64
 	Text        string
+	Entities    []tg.MessageEntity
+	ParseMode   string
+	RichMessage json.RawMessage
 	ReplyMarkup json.RawMessage
 }
 
@@ -276,15 +286,22 @@ func (m *Memory) SaveBotMessage(_ context.Context, input BotMessageInput) (tg.Me
 
 	chat := m.chatLocked(input.ChatID, "", "")
 	msg := tg.Message{
-		MessageID:   m.nextMessageID,
-		From:        &input.From,
-		Chat:        chat,
-		Date:        time.Now().Unix(),
-		Text:        input.Text,
-		Caption:     input.Caption,
-		Photo:       input.Photo,
-		PhotoURL:    input.PhotoURL,
-		ReplyMarkup: input.ReplyMarkup,
+		MessageID:        m.nextMessageID,
+		From:             &input.From,
+		Chat:             chat,
+		Date:             time.Now().Unix(),
+		Text:             input.Text,
+		Entities:         input.Entities,
+		ParseMode:        input.ParseMode,
+		Caption:          input.Caption,
+		CaptionEntities:  input.CaptionEntities,
+		CaptionParseMode: input.CaptionParseMode,
+		Photo:            input.Photo,
+		PhotoURL:         input.PhotoURL,
+		MediaKind:        input.MediaKind,
+		MediaURL:         input.MediaURL,
+		RichMessage:      input.RichMessage,
+		ReplyMarkup:      input.ReplyMarkup,
 	}
 	if len(msg.Photo) == 0 && msg.PhotoURL != "" {
 		msg.Photo = photoSizes(msg.PhotoURL)
@@ -305,6 +322,9 @@ func (m *Memory) EditMessageText(_ context.Context, input EditMessageTextInput) 
 		return tg.Message{}, ErrMessageNotFound
 	}
 	msg.Text = input.Text
+	msg.Entities = input.Entities
+	msg.ParseMode = input.ParseMode
+	msg.RichMessage = input.RichMessage
 	if input.ReplyMarkup != nil {
 		msg.ReplyMarkup = input.ReplyMarkup
 	}

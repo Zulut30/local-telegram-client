@@ -31,6 +31,7 @@ const (
 	CallbackDeleteTemp = "showcase:delete-temp"
 	CallbackReply      = "showcase:reply-keyboard"
 	CallbackError      = "showcase:trace-error"
+	CallbackRichDemo   = "showcase:rich-demo"
 )
 
 type TelegramClient interface {
@@ -40,6 +41,10 @@ type TelegramClient interface {
 	AnswerCallbackQuery(params *telego.AnswerCallbackQueryParams) error
 	EditMessageText(params *telego.EditMessageTextParams) (*telego.Message, error)
 	DeleteMessage(params *telego.DeleteMessageParams) error
+}
+
+type rawTelegramClient interface {
+	Call(method string, params any, result any) error
 }
 
 type TraceErrorTrigger func(chatID int64) error
@@ -371,6 +376,15 @@ func (b *Bot) handleCallback(query *telego.CallbackQuery) error {
 			return b.alert(query.ID, "Не удалось определить чат для trace-ошибки")
 		}
 		return b.triggerErrorScenario(chatID)
+	case query.Data == CallbackRichDemo:
+		if err := b.answer(query.ID, "Отправляю rich demo"); err != nil {
+			return err
+		}
+		chatID, ok := callbackChatID(query)
+		if !ok {
+			return b.alert(query.ID, "Не удалось определить чат для rich demo")
+		}
+		return b.sendRichDemo(chatID)
 	default:
 		return b.alert(query.ID, "Неизвестный callback витрины: "+query.Data)
 	}
@@ -456,6 +470,33 @@ func (b *Bot) sendDevTools(chatID int64) error {
 		ReplyMarkup: devToolsInlineKeyboard(),
 	})
 	return err
+}
+
+func (b *Bot) sendRichDemo(chatID int64) error {
+	if err := b.client.SendChatAction(&telego.SendChatActionParams{
+		ChatID: telego.ChatID{ID: chatID},
+		Action: telego.ChatActionTyping,
+	}); err != nil {
+		return err
+	}
+	raw, ok := b.client.(rawTelegramClient)
+	if !ok {
+		_, err := b.client.SendMessage(&telego.SendMessageParams{
+			ChatID: telego.ChatID{ID: chatID},
+			Text:   "Rich demo требует raw Bot API client.",
+		})
+		return err
+	}
+	return raw.Call("sendRichMessage", map[string]any{
+		"chat_id": chatID,
+		"rich_message": map[string]any{
+			"html": strings.Join([]string{
+				"<p><b>Rich demo</b> <tg-emoji emoji-id=\"premium_demo\">✨</tg-emoji></p>",
+				"<p>Проверяем форматирование, premium/custom emoji и таблицу.</p>",
+				"<table><tr><td>Функция</td><td>Статус</td></tr><tr><td>custom emoji</td><td>готово</td></tr><tr><td>таблица</td><td>готово</td></tr></table>",
+			}, ""),
+		},
+	}, nil)
 }
 
 func (b *Bot) triggerErrorScenario(chatID int64) error {
@@ -550,6 +591,9 @@ func devToolsInlineKeyboard() *telego.InlineKeyboardMarkup {
 		{
 			{Text: "Ошибка trace", CallbackData: CallbackError},
 			{Text: "Рецепты", CallbackData: CallbackRecipeList},
+		},
+		{
+			{Text: "Rich demo", CallbackData: CallbackRichDemo},
 		},
 	}}
 }

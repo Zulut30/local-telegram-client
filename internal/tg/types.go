@@ -20,15 +20,22 @@ type Chat struct {
 }
 
 type Message struct {
-	MessageID   int64           `json:"message_id"`
-	From        *User           `json:"from,omitempty"`
-	Chat        Chat            `json:"chat"`
-	Date        int64           `json:"date"`
-	Text        string          `json:"text,omitempty"`
-	Caption     string          `json:"caption,omitempty"`
-	Photo       []PhotoSize     `json:"photo,omitempty"`
-	PhotoURL    string          `json:"photo_url,omitempty"`
-	ReplyMarkup json.RawMessage `json:"reply_markup,omitempty"`
+	MessageID        int64           `json:"message_id"`
+	From             *User           `json:"from,omitempty"`
+	Chat             Chat            `json:"chat"`
+	Date             int64           `json:"date"`
+	Text             string          `json:"text,omitempty"`
+	Entities         []MessageEntity `json:"entities,omitempty"`
+	ParseMode        string          `json:"parse_mode,omitempty"`
+	Caption          string          `json:"caption,omitempty"`
+	CaptionEntities  []MessageEntity `json:"caption_entities,omitempty"`
+	CaptionParseMode string          `json:"caption_parse_mode,omitempty"`
+	Photo            []PhotoSize     `json:"photo,omitempty"`
+	PhotoURL         string          `json:"photo_url,omitempty"`
+	MediaKind        string          `json:"media_kind,omitempty"`
+	MediaURL         string          `json:"media_url,omitempty"`
+	RichMessage      json.RawMessage `json:"rich_message,omitempty"`
+	ReplyMarkup      json.RawMessage `json:"reply_markup,omitempty"`
 }
 
 type PhotoSize struct {
@@ -37,6 +44,19 @@ type PhotoSize struct {
 	Width        int    `json:"width"`
 	Height       int    `json:"height"`
 	FileSize     int    `json:"file_size,omitempty"`
+}
+
+type MessageEntity struct {
+	Type            string `json:"type"`
+	Offset          int    `json:"offset"`
+	Length          int    `json:"length"`
+	URL             string `json:"url,omitempty"`
+	User            *User  `json:"user,omitempty"`
+	Language        string `json:"language,omitempty"`
+	CustomEmojiID   string `json:"custom_emoji_id,omitempty"`
+	UnixTime        int64  `json:"unix_time,omitempty"`
+	DateTimeFormat  string `json:"date_time_format,omitempty"`
+	AlternativeText string `json:"alternative_text,omitempty"`
 }
 
 type Update struct {

@@ -56,6 +56,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, 401, "unauthorized bot token")
 		return
 	}
+	canonicalMethod, knownMethod := canonicalBotAPIMethod(method)
+	if !knownMethod {
+		writeError(w, http.StatusNotFound, 404, "method not found")
+		return
+	}
+	method = canonicalMethod
 
 	params, err := parseParams(r)
 	if err != nil {
@@ -94,20 +100,36 @@ func (h *Handler) dispatch(w http.ResponseWriter, r *http.Request, method string
 		h.handleSendMessage(w, r, params)
 	case "sendPhoto":
 		h.handleSendPhoto(w, r, params)
+	case "sendRichMessage":
+		h.handleSendRichMessage(w, r, params)
+	case "sendMessageDraft", "sendRichMessageDraft":
+		h.handleSendDraft(w, params, method)
 	case "sendChatAction":
 		h.handleSendChatAction(w, params)
+	case "sendMediaGroup":
+		h.handleSendMediaGroup(w, r, params)
+	case "copyMessage":
+		h.handleCopyMessage(w, r, params)
+	case "copyMessages", "forwardMessages":
+		h.handleMessageIDList(w, method, params)
 	case "editMessageText":
 		h.handleEditMessageText(w, r, params)
 	case "editMessageReplyMarkup":
 		h.handleEditMessageReplyMarkup(w, r, params)
 	case "deleteMessage":
 		h.handleDeleteMessage(w, r, params)
+	case "deleteMessages":
+		h.handleDeleteMessages(w, r, params)
 	case "answerCallbackQuery":
 		h.handleAnswerCallbackQuery(w, params)
+	case "getCustomEmojiStickers":
+		h.handleGetCustomEmojiStickers(w, params)
 	default:
-		params["_sim_unimplemented"] = true
-		h.logger.Info("unimplemented bot api method", "method", method)
-		writeOK(w, true)
+		if isGenericSendMessageMethod(method) {
+			h.handleGenericSendMessage(w, r, method, params)
+			return
+		}
+		h.handleKnownMethodStub(w, method, params)
 	}
 }
 
@@ -139,7 +161,12 @@ func (h *Handler) recordCall(method string, params parameters, latency time.Dura
 }
 
 func shouldTrace(method string) bool {
-	return method != "getMe" && method != "getUpdates"
+	switch method {
+	case "getMe", "getUpdates":
+		return false
+	default:
+		return true
+	}
 }
 
 func BotUser(token string) tg.User {
@@ -262,7 +289,7 @@ func (h *Handler) handleGetWebhookInfo(w http.ResponseWriter) {
 }
 
 func (h *Handler) handleSendMessage(w http.ResponseWriter, r *http.Request, params parameters) {
-	chatID, err := params.Int64("chat_id", 0)
+	chatID, err := params.ChatIDValue("chat_id", 0)
 	if err != nil || chatID == 0 {
 		writeError(w, http.StatusBadRequest, 400, "chat_id is required")
 		return
@@ -282,11 +309,19 @@ func (h *Handler) handleSendMessage(w http.ResponseWriter, r *http.Request, para
 		writeError(w, http.StatusBadRequest, 400, "reply_markup must be valid JSON")
 		return
 	}
+	entities, err := params.Entities("entities")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, 400, "entities must be valid JSON")
+		return
+	}
+	parseMode, _ := params.String("parse_mode", "")
 
 	msg, err := h.store.SaveBotMessage(r.Context(), store.BotMessageInput{
 		From:             h.bot,
 		ChatID:           chatID,
 		Text:             text,
+		Entities:         entities,
+		ParseMode:        parseMode,
 		ReplyMarkup:      replyMarkup,
 		ReplyToMessageID: replyToMessageID,
 	})
@@ -301,7 +336,7 @@ func (h *Handler) handleSendMessage(w http.ResponseWriter, r *http.Request, para
 }
 
 func (h *Handler) handleSendChatAction(w http.ResponseWriter, params parameters) {
-	chatID, err := params.Int64("chat_id", 0)
+	chatID, err := params.ChatIDValue("chat_id", 0)
 	if err != nil || chatID == 0 {
 		writeError(w, http.StatusBadRequest, 400, "chat_id is required")
 		return
@@ -311,11 +346,19 @@ func (h *Handler) handleSendChatAction(w http.ResponseWriter, params parameters)
 		writeError(w, http.StatusBadRequest, 400, "action is invalid")
 		return
 	}
+	if h.hub != nil {
+		h.hub.Broadcast("chat_action", map[string]any{
+			"chat_id": chatID,
+			"action":  action,
+			"from":    h.bot,
+			"until":   time.Now().Add(5 * time.Second).UnixMilli(),
+		})
+	}
 	writeOK(w, true)
 }
 
 func (h *Handler) handleSendPhoto(w http.ResponseWriter, r *http.Request, params parameters) {
-	chatID, err := params.Int64("chat_id", 0)
+	chatID, err := params.ChatIDValue("chat_id", 0)
 	if err != nil || chatID == 0 {
 		writeError(w, http.StatusBadRequest, 400, "chat_id is required")
 		return
@@ -336,12 +379,22 @@ func (h *Handler) handleSendPhoto(w http.ResponseWriter, r *http.Request, params
 		writeError(w, http.StatusBadRequest, 400, "reply_markup must be valid JSON")
 		return
 	}
+	captionEntities, err := params.Entities("caption_entities")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, 400, "caption_entities must be valid JSON")
+		return
+	}
+	captionParseMode, _ := params.String("parse_mode", "")
 
 	msg, err := h.store.SaveBotMessage(r.Context(), store.BotMessageInput{
 		From:             h.bot,
 		ChatID:           chatID,
 		Caption:          caption,
+		CaptionEntities:  captionEntities,
+		CaptionParseMode: captionParseMode,
 		PhotoURL:         photo,
+		MediaKind:        "photo",
+		MediaURL:         photo,
 		ReplyMarkup:      replyMarkup,
 		ReplyToMessageID: replyToMessageID,
 	})
@@ -351,6 +404,255 @@ func (h *Handler) handleSendPhoto(w http.ResponseWriter, r *http.Request, params
 	}
 	h.broadcastMessage("created", msg)
 	writeOK(w, msg)
+}
+
+func (h *Handler) handleSendRichMessage(w http.ResponseWriter, r *http.Request, params parameters) {
+	chatID, err := params.ChatIDValue("chat_id", 0)
+	if err != nil || chatID == 0 {
+		writeError(w, http.StatusBadRequest, 400, "chat_id is required")
+		return
+	}
+	richMessage, err := params.RawJSON("rich_message")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, 400, "rich_message must be valid JSON")
+		return
+	}
+	if len(richMessage) == 0 {
+		writeError(w, http.StatusBadRequest, 400, "rich_message is required")
+		return
+	}
+	replyMarkup, err := params.RawJSON("reply_markup")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, 400, "reply_markup must be valid JSON")
+		return
+	}
+
+	msg, err := h.store.SaveBotMessage(r.Context(), store.BotMessageInput{
+		From:        h.bot,
+		ChatID:      chatID,
+		Text:        params.StringValue("text", ""),
+		RichMessage: richMessage,
+		ReplyMarkup: replyMarkup,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, 500, err.Error())
+		return
+	}
+	h.broadcastMessage("created", msg)
+	writeOK(w, msg)
+}
+
+func (h *Handler) handleSendDraft(w http.ResponseWriter, params parameters, method string) {
+	chatID, err := params.ChatIDValue("chat_id", 0)
+	if err != nil || chatID == 0 {
+		writeError(w, http.StatusBadRequest, 400, "chat_id is required")
+		return
+	}
+	draftID, err := params.Int64("draft_id", 0)
+	if err != nil || draftID == 0 {
+		writeError(w, http.StatusBadRequest, 400, "draft_id is required")
+		return
+	}
+	entities, err := params.Entities("entities")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, 400, "entities must be valid JSON")
+		return
+	}
+	richMessage, err := params.RawJSON("rich_message")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, 400, "rich_message must be valid JSON")
+		return
+	}
+	parseMode, _ := params.String("parse_mode", "")
+	text, _ := params.String("text", "")
+	if text == "" && method == "sendMessageDraft" && len(richMessage) == 0 {
+		text = "Thinking..."
+	}
+	if h.hub != nil {
+		h.hub.Broadcast("message_draft", map[string]any{
+			"chat_id":      chatID,
+			"draft_id":     draftID,
+			"text":         text,
+			"entities":     entities,
+			"parse_mode":   parseMode,
+			"rich_message": optionalRawJSON(richMessage),
+			"until":        time.Now().Add(5 * time.Second).UnixMilli(),
+		})
+	}
+	writeOK(w, true)
+}
+
+func (h *Handler) handleGenericSendMessage(w http.ResponseWriter, r *http.Request, method string, params parameters) {
+	chatID, err := params.ChatIDValue("chat_id", 0)
+	if err != nil || chatID == 0 {
+		writeError(w, http.StatusBadRequest, 400, "chat_id is required")
+		return
+	}
+	replyMarkup, err := params.RawJSON("reply_markup")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, 400, "reply_markup must be valid JSON")
+		return
+	}
+	entities, err := params.Entities("entities")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, 400, "entities must be valid JSON")
+		return
+	}
+	captionEntities, err := params.Entities("caption_entities")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, 400, "caption_entities must be valid JSON")
+		return
+	}
+	text, caption, mediaKind, mediaURL := genericMessageContent(method, params)
+	parseMode, _ := params.String("parse_mode", "")
+
+	msg, err := h.store.SaveBotMessage(r.Context(), store.BotMessageInput{
+		From:             h.bot,
+		ChatID:           chatID,
+		Text:             text,
+		Entities:         entities,
+		ParseMode:        parseMode,
+		Caption:          caption,
+		CaptionEntities:  captionEntities,
+		CaptionParseMode: parseMode,
+		MediaKind:        mediaKind,
+		MediaURL:         mediaURL,
+		ReplyMarkup:      replyMarkup,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, 500, err.Error())
+		return
+	}
+	h.broadcastMessage("created", msg)
+	writeOK(w, msg)
+}
+
+func (h *Handler) handleSendMediaGroup(w http.ResponseWriter, r *http.Request, params parameters) {
+	chatID, err := params.ChatIDValue("chat_id", 0)
+	if err != nil || chatID == 0 {
+		writeError(w, http.StatusBadRequest, 400, "chat_id is required")
+		return
+	}
+	mediaRaw, err := params.RawJSON("media")
+	if err != nil || len(mediaRaw) == 0 {
+		writeError(w, http.StatusBadRequest, 400, "media must be valid JSON")
+		return
+	}
+	var media []map[string]any
+	if err := json.Unmarshal(mediaRaw, &media); err != nil {
+		writeError(w, http.StatusBadRequest, 400, "media must be a JSON array")
+		return
+	}
+	out := make([]tg.Message, 0, len(media))
+	for index, item := range media {
+		kind := stringFromAny(item["type"], "media")
+		urlValue := stringFromAny(item["media"], "")
+		caption := stringFromAny(item["caption"], "")
+		if caption == "" {
+			caption = fmt.Sprintf("%s #%d", methodHumanLabel(kind), index+1)
+		}
+		msg, err := h.store.SaveBotMessage(r.Context(), store.BotMessageInput{
+			From:      h.bot,
+			ChatID:    chatID,
+			Caption:   caption,
+			MediaKind: kind,
+			MediaURL:  urlValue,
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, 500, err.Error())
+			return
+		}
+		h.broadcastMessage("created", msg)
+		out = append(out, msg)
+	}
+	writeOK(w, out)
+}
+
+func (h *Handler) handleCopyMessage(w http.ResponseWriter, r *http.Request, params parameters) {
+	chatID, err := params.ChatIDValue("chat_id", 0)
+	if err != nil || chatID == 0 {
+		writeError(w, http.StatusBadRequest, 400, "chat_id is required")
+		return
+	}
+	caption, _ := params.String("caption", "")
+	if caption == "" {
+		caption = "Copied message"
+	}
+	msg, err := h.store.SaveBotMessage(r.Context(), store.BotMessageInput{
+		From:   h.bot,
+		ChatID: chatID,
+		Text:   caption,
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, 500, err.Error())
+		return
+	}
+	h.broadcastMessage("created", msg)
+	writeOK(w, map[string]any{"message_id": msg.MessageID})
+}
+
+func (h *Handler) handleMessageIDList(w http.ResponseWriter, method string, params parameters) {
+	ids, err := params.Int64Slice("message_ids")
+	if err != nil || len(ids) == 0 {
+		id, err := params.Int64("message_id", 0)
+		if err != nil || id == 0 {
+			writeError(w, http.StatusBadRequest, 400, "message_id or message_ids is required")
+			return
+		}
+		ids = []int64{id}
+	}
+	result := make([]map[string]any, 0, len(ids))
+	for _, id := range ids {
+		result = append(result, map[string]any{"message_id": id})
+	}
+	if method == "forwardMessages" {
+		writeOK(w, result)
+		return
+	}
+	writeOK(w, result)
+}
+
+func (h *Handler) handleDeleteMessages(w http.ResponseWriter, r *http.Request, params parameters) {
+	chatID, err := params.ChatIDValue("chat_id", 0)
+	if err != nil || chatID == 0 {
+		writeError(w, http.StatusBadRequest, 400, "chat_id is required")
+		return
+	}
+	ids, err := params.Int64Slice("message_ids")
+	if err != nil || len(ids) == 0 {
+		writeError(w, http.StatusBadRequest, 400, "message_ids is required")
+		return
+	}
+	for _, id := range ids {
+		msg, err := h.store.DeleteMessage(r.Context(), chatID, id)
+		if err == nil {
+			h.broadcastMessage("deleted", msg)
+		}
+	}
+	writeOK(w, true)
+}
+
+func (h *Handler) handleGetCustomEmojiStickers(w http.ResponseWriter, params parameters) {
+	ids, err := params.StringSlice("custom_emoji_ids")
+	if err != nil || len(ids) == 0 {
+		writeError(w, http.StatusBadRequest, 400, "custom_emoji_ids is required")
+		return
+	}
+	stickers := make([]map[string]any, 0, len(ids))
+	for _, id := range ids {
+		stickers = append(stickers, map[string]any{
+			"file_id":         "custom_emoji_" + id,
+			"file_unique_id":  "custom_emoji_" + id + "_unique",
+			"type":            "custom_emoji",
+			"width":           100,
+			"height":          100,
+			"is_animated":     false,
+			"is_video":        false,
+			"emoji":           "✨",
+			"custom_emoji_id": id,
+		})
+	}
+	writeOK(w, stickers)
 }
 
 func validChatAction(action string) bool {
@@ -373,7 +675,7 @@ func validChatAction(action string) bool {
 }
 
 func (h *Handler) handleEditMessageText(w http.ResponseWriter, r *http.Request, params parameters) {
-	chatID, err := params.Int64("chat_id", 0)
+	chatID, err := params.ChatIDValue("chat_id", 0)
 	if err != nil || chatID == 0 {
 		writeError(w, http.StatusBadRequest, 400, "chat_id is required")
 		return
@@ -384,8 +686,13 @@ func (h *Handler) handleEditMessageText(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	text, _ := params.String("text", "")
-	if text == "" {
-		writeError(w, http.StatusBadRequest, 400, "text is required")
+	richMessage, err := params.RawJSON("rich_message")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, 400, "rich_message must be valid JSON")
+		return
+	}
+	if text == "" && len(richMessage) == 0 {
+		writeError(w, http.StatusBadRequest, 400, "text or rich_message is required")
 		return
 	}
 	replyMarkup, err := params.RawJSON("reply_markup")
@@ -393,11 +700,20 @@ func (h *Handler) handleEditMessageText(w http.ResponseWriter, r *http.Request, 
 		writeError(w, http.StatusBadRequest, 400, "reply_markup must be valid JSON")
 		return
 	}
+	entities, err := params.Entities("entities")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, 400, "entities must be valid JSON")
+		return
+	}
+	parseMode, _ := params.String("parse_mode", "")
 
 	msg, err := h.store.EditMessageText(r.Context(), store.EditMessageTextInput{
 		ChatID:      chatID,
 		MessageID:   messageID,
 		Text:        text,
+		Entities:    entities,
+		ParseMode:   parseMode,
+		RichMessage: richMessage,
 		ReplyMarkup: replyMarkup,
 	})
 	if err != nil {
@@ -409,7 +725,7 @@ func (h *Handler) handleEditMessageText(w http.ResponseWriter, r *http.Request, 
 }
 
 func (h *Handler) handleEditMessageReplyMarkup(w http.ResponseWriter, r *http.Request, params parameters) {
-	chatID, err := params.Int64("chat_id", 0)
+	chatID, err := params.ChatIDValue("chat_id", 0)
 	if err != nil || chatID == 0 {
 		writeError(w, http.StatusBadRequest, 400, "chat_id is required")
 		return
@@ -439,7 +755,7 @@ func (h *Handler) handleEditMessageReplyMarkup(w http.ResponseWriter, r *http.Re
 }
 
 func (h *Handler) handleDeleteMessage(w http.ResponseWriter, r *http.Request, params parameters) {
-	chatID, err := params.Int64("chat_id", 0)
+	chatID, err := params.ChatIDValue("chat_id", 0)
 	if err != nil || chatID == 0 {
 		writeError(w, http.StatusBadRequest, 400, "chat_id is required")
 		return
@@ -479,6 +795,114 @@ func (h *Handler) handleAnswerCallbackQuery(w http.ResponseWriter, params parame
 		})
 	}
 	writeOK(w, true)
+}
+
+func (h *Handler) handleKnownMethodStub(w http.ResponseWriter, method string, params parameters) {
+	h.logger.Debug("stubbed bot api method", "method", method)
+	switch method {
+	case "logOut", "close",
+		"banChatMember", "unbanChatMember", "restrictChatMember", "promoteChatMember",
+		"setChatAdministratorCustomTitle", "setChatMemberTag", "banChatSenderChat", "unbanChatSenderChat",
+		"setChatPermissions", "approveChatJoinRequest", "declineChatJoinRequest", "answerChatJoinRequestQuery",
+		"setChatPhoto", "deleteChatPhoto", "setChatTitle", "setChatDescription", "pinChatMessage", "unpinChatMessage",
+		"unpinAllChatMessages", "leaveChat", "setChatStickerSet", "deleteChatStickerSet", "createForumTopic",
+		"editForumTopic", "closeForumTopic", "reopenForumTopic", "deleteForumTopic", "unpinAllForumTopicMessages",
+		"editGeneralForumTopic", "closeGeneralForumTopic", "reopenGeneralForumTopic", "hideGeneralForumTopic",
+		"unhideGeneralForumTopic", "unpinAllGeneralForumTopicMessages", "answerGuestQuery",
+		"setManagedBotAccessSettings", "setMyCommands", "deleteMyCommands",
+		"setMyName", "setMyDescription", "setMyShortDescription", "setMyProfilePhoto", "removeMyProfilePhoto",
+		"setChatMenuButton", "setMyDefaultAdministratorRights", "sendGift", "giftPremiumSubscription",
+		"verifyUser", "verifyChat", "removeUserVerification", "removeChatVerification", "readBusinessMessage",
+		"deleteBusinessMessages", "setBusinessAccountName", "setBusinessAccountUsername", "setBusinessAccountBio",
+		"setBusinessAccountProfilePhoto", "removeBusinessAccountProfilePhoto", "setBusinessAccountGiftSettings",
+		"transferBusinessAccountStars", "convertGiftToStars", "upgradeGift", "transferGift", "postStory",
+		"repostStory", "editStory", "deleteStory", "answerInlineQuery", "answerShippingQuery",
+		"answerPreCheckoutQuery", "refundStarPayment", "editUserStarSubscription", "setPassportDataErrors",
+		"setGameScore", "deleteMessageReaction", "deleteAllMessageReactions", "createNewStickerSet",
+		"addStickerToSet", "setStickerPositionInSet", "deleteStickerFromSet", "replaceStickerInSet",
+		"setStickerEmojiList", "setStickerKeywords", "setStickerMaskPosition", "setStickerSetTitle",
+		"setStickerSetThumbnail", "setCustomEmojiStickerSetThumbnail", "deleteStickerSet",
+		"approveSuggestedPost", "declineSuggestedPost", "setMessageReaction", "setUserEmojiStatus":
+		writeOK(w, true)
+	case "getFile", "uploadStickerFile":
+		fileID, _ := params.String("file_id", "")
+		if fileID == "" {
+			fileID, _ = params.String("sticker", "sim_file")
+		}
+		writeOK(w, map[string]any{
+			"file_id":        fileID,
+			"file_unique_id": fileID + "_unique",
+			"file_size":      0,
+			"file_path":      "sim/" + fileID,
+		})
+	case "exportChatInviteLink", "createInvoiceLink", "getManagedBotToken", "replaceManagedBotToken":
+		writeOK(w, "https://t.me/local_telegram_client_sim")
+	case "createChatInviteLink", "editChatInviteLink", "createChatSubscriptionInviteLink", "editChatSubscriptionInviteLink", "revokeChatInviteLink":
+		writeOK(w, map[string]any{
+			"invite_link":          "https://t.me/+local-sim",
+			"creator":              h.bot,
+			"creates_join_request": false,
+			"is_primary":           false,
+			"is_revoked":           false,
+		})
+	case "getChat":
+		chatID, _ := params.ChatIDValue("chat_id", 1)
+		writeOK(w, tg.Chat{ID: chatID, Type: "private", FirstName: "Sim Chat"})
+	case "getChatAdministrators":
+		writeOK(w, []any{})
+	case "getChatMemberCount":
+		writeOK(w, 1)
+	case "getChatMember":
+		writeOK(w, map[string]any{"status": "member", "user": h.bot})
+	case "getUserProfilePhotos":
+		writeOK(w, map[string]any{"total_count": 0, "photos": []any{}})
+	case "getUserProfileAudios":
+		writeOK(w, map[string]any{"total_count": 0, "audios": []any{}})
+	case "getForumTopicIconStickers", "getBusinessAccountGifts", "getUserGifts", "getChatGifts":
+		writeOK(w, []any{})
+	case "getUserPersonalChatMessages":
+		writeOK(w, []any{})
+	case "getUserChatBoosts":
+		writeOK(w, map[string]any{"boosts": []any{}})
+	case "getBusinessConnection":
+		id, _ := params.String("business_connection_id", "sim_business_connection")
+		writeOK(w, map[string]any{"id": id, "user": h.bot, "user_chat_id": h.bot.ID, "date": time.Now().Unix(), "is_enabled": true})
+	case "getManagedBotAccessSettings":
+		writeOK(w, map[string]any{"is_managed": false})
+	case "getMyCommands":
+		writeOK(w, []any{})
+	case "getMyName":
+		writeOK(w, map[string]any{"name": h.bot.FirstName})
+	case "getMyDescription", "getMyShortDescription":
+		writeOK(w, map[string]any{"description": ""})
+	case "getChatMenuButton":
+		writeOK(w, map[string]any{"type": "default"})
+	case "getMyDefaultAdministratorRights":
+		writeOK(w, map[string]any{})
+	case "getAvailableGifts":
+		writeOK(w, map[string]any{"gifts": []any{}})
+	case "getBusinessAccountStarBalance", "getMyStarBalance":
+		writeOK(w, map[string]any{"amount": 0})
+	case "getStarTransactions":
+		writeOK(w, map[string]any{"transactions": []any{}})
+	case "answerWebAppQuery":
+		writeOK(w, map[string]any{"inline_message_id": "sim_inline_message"})
+	case "savePreparedInlineMessage":
+		writeOK(w, map[string]any{"id": "sim_prepared_inline_message", "expiration_date": time.Now().Add(time.Hour).Unix()})
+	case "savePreparedKeyboardButton":
+		writeOK(w, map[string]any{"id": "sim_prepared_keyboard_button", "expiration_date": time.Now().Add(time.Hour).Unix()})
+	case "editMessageCaption", "editMessageMedia", "editMessageLiveLocation", "stopMessageLiveLocation", "editMessageChecklist", "stopPoll":
+		writeOK(w, true)
+	case "getStickerSet":
+		name, _ := params.String("name", "sim_sticker_set")
+		writeOK(w, map[string]any{"name": name, "title": name, "sticker_type": "regular", "stickers": []any{}})
+	case "getGameHighScores":
+		writeOK(w, []any{})
+	case "sendChatJoinRequestWebApp":
+		writeOK(w, map[string]any{"sent": true})
+	default:
+		writeOK(w, true)
+	}
 }
 
 func (h *Handler) broadcastMessage(op string, msg tg.Message) {
@@ -666,6 +1090,76 @@ func parseParams(r *http.Request) (parameters, error) {
 	return params, nil
 }
 
+func genericMessageContent(method string, params parameters) (text, caption, mediaKind, mediaURL string) {
+	text, _ = params.String("text", "")
+	caption, _ = params.String("caption", "")
+	mediaKind = strings.TrimPrefix(method, "send")
+	if mediaKind == method || mediaKind == "" {
+		mediaKind = method
+	}
+	mediaKind = strings.ToLower(mediaKind[:1]) + mediaKind[1:]
+	for _, key := range []string{"photo", "live_photo", "audio", "document", "video", "animation", "voice", "video_note", "sticker", "media"} {
+		if value, ok := params.String(key, ""); ok && value != "" {
+			mediaURL = value
+			break
+		}
+	}
+	if text == "" && caption == "" {
+		switch method {
+		case "sendDice":
+			text = "🎲 Dice"
+		case "sendLocation":
+			text = fmt.Sprintf("Location: %s, %s", params.StringValue("latitude", "?"), params.StringValue("longitude", "?"))
+		case "sendVenue":
+			text = "Venue: " + params.StringValue("title", "Untitled venue")
+		case "sendContact":
+			text = "Contact: " + strings.TrimSpace(params.StringValue("first_name", "")+" "+params.StringValue("last_name", ""))
+		case "sendPoll":
+			text = "Poll: " + params.StringValue("question", "Untitled poll")
+		case "sendChecklist":
+			text = "Checklist"
+		case "sendGame":
+			text = "Game: " + params.StringValue("game_short_name", "game")
+		case "forwardMessage":
+			text = "Forwarded message"
+		default:
+			caption = methodHumanLabel(mediaKind)
+		}
+	}
+	return text, caption, mediaKind, mediaURL
+}
+
+func methodHumanLabel(kind string) string {
+	if kind == "" {
+		return "Bot API message"
+	}
+	return "Bot API " + kind
+}
+
+func optionalRawJSON(raw json.RawMessage) any {
+	if len(raw) == 0 {
+		return nil
+	}
+	return raw
+}
+
+func stringFromAny(value any, fallback string) string {
+	if value == nil {
+		return fallback
+	}
+	switch typed := value.(type) {
+	case string:
+		if typed == "" {
+			return fallback
+		}
+		return typed
+	case json.Number:
+		return typed.String()
+	default:
+		return fmt.Sprint(typed)
+	}
+}
+
 func (p parameters) String(key, fallback string) (string, bool) {
 	value, ok := p[key]
 	if !ok || value == nil {
@@ -679,6 +1173,11 @@ func (p parameters) String(key, fallback string) (string, bool) {
 	default:
 		return fmt.Sprint(typed), true
 	}
+}
+
+func (p parameters) StringValue(key, fallback string) string {
+	value, _ := p.String(key, fallback)
+	return value
 }
 
 func (p parameters) Int(key string, fallback int) (int, error) {
@@ -729,11 +1228,29 @@ func (p parameters) Bool(key string, fallback bool) (bool, error) {
 }
 
 func (p parameters) ChatID() *int64 {
-	chatID, err := p.Int64("chat_id", 0)
+	chatID, err := p.ChatIDValue("chat_id", 0)
 	if err != nil || chatID == 0 {
 		return nil
 	}
 	return &chatID
+}
+
+func (p parameters) ChatIDValue(key string, fallback int64) (int64, error) {
+	value, ok := p[key]
+	if !ok || value == nil {
+		return fallback, nil
+	}
+	if raw, ok := value.(string); ok {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			return fallback, nil
+		}
+		if strings.HasPrefix(raw, "@") {
+			return syntheticChatID(raw), nil
+		}
+		return strconv.ParseInt(raw, 10, 64)
+	}
+	return p.Int64(key, fallback)
 }
 
 func (p parameters) TraceParams() map[string]any {
@@ -767,4 +1284,97 @@ func (p parameters) RawJSON(key string) (json.RawMessage, error) {
 		}
 		return raw, nil
 	}
+}
+
+func (p parameters) Entities(key string) ([]tg.MessageEntity, error) {
+	raw, err := p.RawJSON(key)
+	if err != nil || len(raw) == 0 {
+		return nil, err
+	}
+	var entities []tg.MessageEntity
+	if err := json.Unmarshal(raw, &entities); err != nil {
+		return nil, err
+	}
+	return entities, nil
+}
+
+func (p parameters) StringSlice(key string) ([]string, error) {
+	value, ok := p[key]
+	if !ok || value == nil {
+		return nil, nil
+	}
+	switch typed := value.(type) {
+	case []string:
+		return typed, nil
+	case []any:
+		out := make([]string, 0, len(typed))
+		for _, item := range typed {
+			out = append(out, stringFromAny(item, ""))
+		}
+		return out, nil
+	case string:
+		if typed == "" {
+			return nil, nil
+		}
+		var out []string
+		if json.Valid([]byte(typed)) {
+			if err := json.Unmarshal([]byte(typed), &out); err == nil {
+				return out, nil
+			}
+		}
+		return []string{typed}, nil
+	default:
+		return nil, fmt.Errorf("%s must be an array of strings", key)
+	}
+}
+
+func (p parameters) Int64Slice(key string) ([]int64, error) {
+	value, ok := p[key]
+	if !ok || value == nil {
+		return nil, nil
+	}
+	switch typed := value.(type) {
+	case []int64:
+		return typed, nil
+	case []any:
+		out := make([]int64, 0, len(typed))
+		for _, item := range typed {
+			switch value := item.(type) {
+			case json.Number:
+				id, err := value.Int64()
+				if err != nil {
+					return nil, err
+				}
+				out = append(out, id)
+			case float64:
+				out = append(out, int64(value))
+			case string:
+				id, err := strconv.ParseInt(value, 10, 64)
+				if err != nil {
+					return nil, err
+				}
+				out = append(out, id)
+			default:
+				return nil, fmt.Errorf("%s must be an array of integers", key)
+			}
+		}
+		return out, nil
+	case string:
+		if typed == "" {
+			return nil, nil
+		}
+		var out []int64
+		if err := json.Unmarshal([]byte(typed), &out); err != nil {
+			return nil, err
+		}
+		return out, nil
+	default:
+		return nil, fmt.Errorf("%s must be an array of integers", key)
+	}
+}
+
+func syntheticChatID(value string) int64 {
+	hash := fnv.New32a()
+	_, _ = hash.Write([]byte(strings.ToLower(value)))
+	return int64(2_000_000_000 + hash.Sum32()%1_000_000_000)
 }

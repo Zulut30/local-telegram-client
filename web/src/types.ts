@@ -33,10 +33,30 @@ export interface Message {
   chat: Chat;
   date: number;
   text?: string;
+  entities?: MessageEntity[];
+  parse_mode?: string;
   caption?: string;
+  caption_entities?: MessageEntity[];
+  caption_parse_mode?: string;
   photo?: PhotoSize[];
   photo_url?: string;
+  media_kind?: string;
+  media_url?: string;
+  rich_message?: unknown;
   reply_markup?: ReplyMarkup;
+}
+
+export interface MessageEntity {
+  type: string;
+  offset: number;
+  length: number;
+  url?: string;
+  user?: User;
+  language?: string;
+  custom_emoji_id?: string;
+  unix_time?: number;
+  date_time_format?: string;
+  alternative_text?: string;
 }
 
 export interface PhotoSize {
@@ -67,6 +87,23 @@ export interface CallbackAnswerEventPayload {
   callback_query_id: string;
   text?: string;
   show_alert?: boolean;
+}
+
+export interface ChatActionEventPayload {
+  chat_id: number;
+  action: string;
+  from?: User;
+  until: number;
+}
+
+export interface MessageDraftEventPayload {
+  chat_id: number;
+  draft_id: number;
+  text?: string;
+  entities?: MessageEntity[];
+  parse_mode?: string;
+  rich_message?: unknown;
+  until: number;
 }
 
 export type TraceStatus = 'open' | 'ok' | 'error';

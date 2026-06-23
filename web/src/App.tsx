@@ -104,7 +104,13 @@ export function App() {
               onReset={resetEverything}
             />
           ) : null}
-          <MessageList messages={sim.selectedMessages} onCallback={sim.sendCallback} onReplyText={sim.sendText} />
+          <MessageList
+            messages={sim.selectedMessages}
+            chatAction={sim.selectedChatAction}
+            draft={sim.selectedDraft}
+            onCallback={sim.sendCallback}
+            onReplyText={sim.sendText}
+          />
           <Composer onSend={sim.sendText} onPhoto={sim.sendPhoto} />
         </section>
         {showConsole ? <TracePanel traces={traceState.traces} clearing={clearingTraces} onClear={clearConsole} /> : null}

@@ -172,6 +172,19 @@ func TestHandleCallbacks(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "rich demo",
+			data: CallbackRichDemo,
+			assert: func(t *testing.T, client *fakeClient) {
+				t.Helper()
+				if len(client.actions) != 1 || client.actions[0].Action != telego.ChatActionTyping {
+					t.Fatalf("actions = %#v, want typing action", client.actions)
+				}
+				if len(client.rawCalls) != 1 || client.rawCalls[0].method != "sendRichMessage" {
+					t.Fatalf("raw calls = %#v, want sendRichMessage", client.rawCalls)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -200,8 +213,14 @@ type fakeClient struct {
 	answered       []*telego.AnswerCallbackQueryParams
 	edited         []*telego.EditMessageTextParams
 	deleted        []*telego.DeleteMessageParams
+	rawCalls       []fakeRawCall
 	nextMessageID  int
 	traceTriggered bool
+}
+
+type fakeRawCall struct {
+	method string
+	params any
 }
 
 func (f *fakeClient) SendMessage(params *telego.SendMessageParams) (*telego.Message, error) {
@@ -248,6 +267,11 @@ func (f *fakeClient) EditMessageText(params *telego.EditMessageTextParams) (*tel
 
 func (f *fakeClient) DeleteMessage(params *telego.DeleteMessageParams) error {
 	f.deleted = append(f.deleted, params)
+	return nil
+}
+
+func (f *fakeClient) Call(method string, params any, _ any) error {
+	f.rawCalls = append(f.rawCalls, fakeRawCall{method: method, params: params})
 	return nil
 }
 

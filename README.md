@@ -4,6 +4,10 @@ Local Telegram Client is a fake Telegram Bot API server and browser DevTools UI 
 Point your bot's Bot API base URL at the simulator, open the browser, and test messages, buttons,
 callbacks, webhooks, and trace output without a phone, tunnel, or real Telegram connection.
 
+The simulator includes a Bot API 10.1 compatibility registry generated from the official Telegram
+Bot API documentation. Core chat flows are implemented with stateful behavior, while the rest of the
+official methods return deterministic compatibility stubs and still appear in trace output.
+
 ## Quickstart
 
 Build the web UI and Go binaries:
@@ -33,7 +37,7 @@ In a second terminal, start the showcase bot:
 
 Send `/start` in the browser chat. The Russian showcase bot opens a recipe catalog with photo
 cards, ingredients, steps, source links, reply keyboard controls, and an `Инструменты` section for
-edit, toast, temporary delete, reply keyboard, and trace error scenarios.
+edit, toast, temporary delete, reply keyboard, rich message, and trace error scenarios.
 
 The browser UI works like a small Russian-localized IDE: use the top bar to hide/show `Чаты`,
 `Гайд`, and `Консоль`, switch light/dark theme, and use the attachment button in the composer to
@@ -62,8 +66,19 @@ The bundled showcase bot is a small food recipe bot backed by static demo data f
 - `sendMessage` for menus, ingredients, steps, echo, and photo acknowledgements.
 - `sendPhoto` for recipe cards with remote image URLs.
 - `sendChatAction` for realistic bot activity states such as `upload_photo`.
+- `sendRichMessage`, custom emoji entities, HTML formatting, and rich tables.
 - `answerCallbackQuery`, `editMessageText`, `deleteMessage`, reply keyboards, polling, webhook, and trace errors.
 - User photo injection through the UI attachment button.
+
+## Bot API Coverage
+
+- Stateful methods: `getUpdates`, webhook methods, `sendMessage`, `sendPhoto`, `sendRichMessage`,
+  `sendChatAction`, `sendMessageDraft`, `sendRichMessageDraft`, edits, deletes, callback answers,
+  media groups, generic send methods, and custom emoji sticker lookup.
+- UI rendering: message entities, custom/premium emoji placeholders, HTML parse mode, rich-message
+  tables, media chips, live typing status, and streaming draft previews.
+- Compatibility stubs: every official Bot API 10.1 method is recognized case-insensitively; methods
+  that are not stateful yet return a stable success shape for local bot testing.
 
 Included recipe sources:
 
@@ -126,6 +141,7 @@ GET  /_sim/state    # chats and messages
 GET  /_sim/traces   # trace ring snapshot
 GET  /_sim/events   # SSE stream
 POST /_sim/reset    # clear chats, messages, pending updates, traces, and webhook state
+POST /_sim/traces/reset # clear traces only, keep chat state
 ```
 
 ## Release Build

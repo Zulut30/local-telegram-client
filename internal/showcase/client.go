@@ -98,6 +98,10 @@ func (c *APIClient) DeleteMessage(params *telego.DeleteMessageParams) error {
 	return c.call("deleteMessage", params, nil)
 }
 
+func (c *APIClient) Call(method string, params any, result any) error {
+	return c.call(method, params, result)
+}
+
 func (c *APIClient) call(method string, params any, result any) error {
 	body := []byte("{}")
 	if params != nil {

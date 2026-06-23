@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { injectCallback, injectPhoto, injectText, loadState, resetSession } from './api';
-import type { CallbackAnswerEventPayload, Chat, Message, MessageEventPayload, SimState } from './types';
+import type {
+  CallbackAnswerEventPayload,
+  Chat,
+  ChatActionEventPayload,
+  Message,
+  MessageDraftEventPayload,
+  MessageEventPayload,
+  SimState,
+} from './types';
 
 const fallbackChat: Chat = {
   id: 1,
@@ -32,12 +40,20 @@ function errorMessage(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
 }
 
+function withoutChat<T>(items: Record<string, T>, chatID: number): Record<string, T> {
+  const next = { ...items };
+  delete next[String(chatID)];
+  return next;
+}
+
 export function useSimState() {
   const [state, setState] = useState<SimState>({ chats: [], messages: {} });
   const [selectedChatID, setSelectedChatID] = useState<number>(fallbackChat.id);
   const [status, setStatus] = useState<'connecting' | 'live' | 'offline'>('connecting');
   const [error, setError] = useState<string | null>(null);
   const [callbackNotice, setCallbackNotice] = useState<string | null>(null);
+  const [chatActions, setChatActions] = useState<Record<string, ChatActionEventPayload>>({});
+  const [drafts, setDrafts] = useState<Record<string, MessageDraftEventPayload>>({});
   const callbackNoticeTimer = useRef<number | null>(null);
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
@@ -81,7 +97,30 @@ export function useSimState() {
     source.addEventListener('message', (event) => {
       const payload = JSON.parse(event.data) as MessageEventPayload;
       setState((current) => applyMessage(current, payload));
+      setChatActions((current) => withoutChat(current, payload.message.chat.id));
+      setDrafts((current) => withoutChat(current, payload.message.chat.id));
       setSelectedChatID((current) => current || payload.message.chat.id);
+    });
+    source.addEventListener('chat_action', (event) => {
+      const payload = JSON.parse(event.data) as ChatActionEventPayload;
+      setChatActions((current) => ({ ...current, [String(payload.chat_id)]: payload }));
+      window.setTimeout(() => {
+        setChatActions((current) => {
+          const active = current[String(payload.chat_id)];
+          return active && active.until <= Date.now() ? withoutChat(current, payload.chat_id) : current;
+        });
+      }, Math.max(0, payload.until - Date.now()) + 50);
+    });
+    source.addEventListener('message_draft', (event) => {
+      const payload = JSON.parse(event.data) as MessageDraftEventPayload;
+      setDrafts((current) => ({ ...current, [String(payload.chat_id)]: payload }));
+      setChatActions((current) => withoutChat(current, payload.chat_id));
+      window.setTimeout(() => {
+        setDrafts((current) => {
+          const active = current[String(payload.chat_id)];
+          return active && active.until <= Date.now() ? withoutChat(current, payload.chat_id) : current;
+        });
+      }, Math.max(0, payload.until - Date.now()) + 50);
     });
     source.addEventListener('callback_answer', (event) => {
       const payload = JSON.parse(event.data) as CallbackAnswerEventPayload;
@@ -161,6 +200,8 @@ export function useSimState() {
     try {
       await resetSession();
       setCallbackNotice(null);
+      setChatActions({});
+      setDrafts({});
       setState({ chats: [], messages: {} });
       setSelectedChatID(fallbackChat.id);
       await refresh();
@@ -173,6 +214,8 @@ export function useSimState() {
     chats,
     selectedChatID,
     selectedMessages,
+    selectedChatAction: chatActions[String(selectedChatID)],
+    selectedDraft: drafts[String(selectedChatID)],
     status,
     error,
     callbackNotice,

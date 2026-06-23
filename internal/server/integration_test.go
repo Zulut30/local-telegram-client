@@ -247,6 +247,106 @@ func TestBotAPISendChatActionValidation(t *testing.T) {
 	}
 }
 
+func TestBotAPIFormattingRichMessagesAndRegistry(t *testing.T) {
+	st := store.NewMemory()
+	cfg := config.Config{Mode: config.ModeLocal, BotToken: "1234567890:aaaabbbbaaaabbbbaaaabbbbaaaabbbbccc", BufferSize: 100}
+	handler := NewWithStore(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), st)
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+
+	sendEnv := botCall(t, srv.URL, cfg.BotToken, "SENDMESSAGE", map[string]any{
+		"chat_id":    42,
+		"text":       "Premium ✨ bold",
+		"parse_mode": "HTML",
+		"entities": []map[string]any{
+			{"type": "custom_emoji", "offset": 8, "length": 1, "custom_emoji_id": "emoji_42", "alternative_text": "✨"},
+			{"type": "bold", "offset": 10, "length": 4},
+		},
+	}, http.StatusOK)
+	sent := decodeBotResult[tg.Message](t, sendEnv)
+	if sent.Text != "Premium ✨ bold" || sent.ParseMode != "HTML" {
+		t.Fatalf("sent text/parse_mode = %q/%q", sent.Text, sent.ParseMode)
+	}
+	if len(sent.Entities) != 2 || sent.Entities[0].CustomEmojiID != "emoji_42" {
+		t.Fatalf("sent entities = %#v, want custom emoji entity", sent.Entities)
+	}
+
+	stickersEnv := botCall(t, srv.URL, cfg.BotToken, "getCustomEmojiStickers", map[string]any{
+		"custom_emoji_ids": []string{"emoji_42"},
+	}, http.StatusOK)
+	stickers := decodeBotResult[[]map[string]any](t, stickersEnv)
+	if len(stickers) != 1 || stickers[0]["custom_emoji_id"] != "emoji_42" {
+		t.Fatalf("custom emoji stickers = %#v", stickers)
+	}
+
+	richPayload := map[string]any{
+		"html": "<p><b>Меню</b></p><table><tr><td>Блюдо</td><td>Цена</td></tr><tr><td>Паста</td><td>12</td></tr></table>",
+	}
+	richEnv := botCall(t, srv.URL, cfg.BotToken, "sendRichMessage", map[string]any{
+		"chat_id":      42,
+		"rich_message": richPayload,
+	}, http.StatusOK)
+	richMessage := decodeBotResult[tg.Message](t, richEnv)
+	if len(richMessage.RichMessage) == 0 || !rawJSONContains(richMessage.RichMessage, "table") {
+		t.Fatalf("rich_message = %s, want table payload", richMessage.RichMessage)
+	}
+
+	videoEnv := botCall(t, srv.URL, cfg.BotToken, "sendVideo", map[string]any{
+		"chat_id": 42,
+		"video":   "https://example.test/video.mp4",
+		"caption": "Видео",
+	}, http.StatusOK)
+	video := decodeBotResult[tg.Message](t, videoEnv)
+	if video.MediaKind != "video" || video.MediaURL != "https://example.test/video.mp4" {
+		t.Fatalf("video message = %#v, want generic video message", video)
+	}
+
+	unknownEnv := botCall(t, srv.URL, cfg.BotToken, "definitelyNotTelegram", map[string]any{}, http.StatusNotFound)
+	if unknownEnv.OK || unknownEnv.Description != "method not found" {
+		t.Fatalf("unknown method response = %#v, want method not found", unknownEnv)
+	}
+}
+
+func TestBotAPIChatActionAndDraftEvents(t *testing.T) {
+	st := store.NewMemory()
+	cfg := config.Config{Mode: config.ModeLocal, BotToken: "1234567890:aaaabbbbaaaabbbbaaaabbbbaaaabbbbccc", BufferSize: 100}
+	handler := NewWithStore(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), st)
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+
+	events, stopSSE := startSSE(t, srv.URL)
+	t.Cleanup(stopSSE)
+
+	actionEnv := botCall(t, srv.URL, cfg.BotToken, "sendChatAction", map[string]any{
+		"chat_id": 42,
+		"action":  "typing",
+	}, http.StatusOK)
+	if !actionEnv.OK {
+		t.Fatalf("sendChatAction response = %#v, want ok", actionEnv)
+	}
+	action := waitEventPayload[map[string]any](t, events, "chat_action", func(payload map[string]any) bool {
+		return payload["action"] == "typing"
+	})
+	if action["chat_id"].(float64) != 42 {
+		t.Fatalf("chat_action payload = %#v, want chat 42", action)
+	}
+
+	draftEnv := botCall(t, srv.URL, cfg.BotToken, "sendMessageDraft", map[string]any{
+		"chat_id":  42,
+		"draft_id": 7,
+		"text":     "Печатаю ответ",
+	}, http.StatusOK)
+	if !draftEnv.OK {
+		t.Fatalf("sendMessageDraft response = %#v, want ok", draftEnv)
+	}
+	draft := waitEventPayload[map[string]any](t, events, "message_draft", func(payload map[string]any) bool {
+		return payload["text"] == "Печатаю ответ"
+	})
+	if draft["draft_id"].(float64) != 7 {
+		t.Fatalf("draft payload = %#v, want draft 7", draft)
+	}
+}
+
 func TestSimResetClearsStateAndTraces(t *testing.T) {
 	st := store.NewMemory()
 	cfg := config.Config{Mode: config.ModeLocal, BotToken: "1234567890:aaaabbbbaaaabbbbaaaabbbbaaaabbbbccc", BufferSize: 100}
