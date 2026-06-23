@@ -16,17 +16,16 @@ export function QuickStartPanel({ hasMessages, traceCount, resetting, onSend, on
   return (
     <section className="quick-start" aria-label="Quick start">
       <div className="quick-start__main">
-        <p className="eyebrow">Start here</p>
-        <h2>Test the showcase bot from this chat</h2>
+        <p className="eyebrow">Demo controls</p>
+        <h2>Try the bot tools</h2>
         <p>
-          Run <code>make run-showcase</code> or <code>make run-showcase-webhook</code>, then send <code>/start</code>.
-          Bot replies appear below; every Bot API call appears in Traces.
+          Send a user update here. Bot replies stay in the chat, and Bot API calls appear in Traces.
         </p>
       </div>
       <div className="quick-start__steps" aria-label="Demo steps">
-        <span><b>1</b> Send a message</span>
-        <span><b>2</b> Click bot buttons</span>
-        <span><b>3</b> Read the trace</span>
+        <span><b>1</b> Message</span>
+        <span><b>2</b> Buttons</span>
+        <span><b>3</b> Trace</span>
       </div>
       <div className="quick-start__actions">
         {quickActions.map((action) => (

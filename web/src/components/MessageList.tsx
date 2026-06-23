@@ -26,8 +26,8 @@ export function MessageList({ messages, onCallback, onReplyText }: MessageListPr
     <div className="messages" aria-live="polite">
       {messages.length === 0 ? (
         <div className="empty empty--chat">
-          <strong>No messages yet</strong>
-          <span>Use "Send /start" above or type in the composer below.</span>
+          <strong>No messages here yet</strong>
+          <span>Press "Send /start" or type below to begin.</span>
         </div>
       ) : null}
       {messages.map((message) => {

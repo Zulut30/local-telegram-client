@@ -38,7 +38,7 @@ export function App() {
           <div>
             <p className="eyebrow">Local Telegram</p>
             <h1>Bot Simulator</h1>
-            <p className="conversation__subtitle">Write as the user. The showcase bot answers here.</p>
+            <p className="conversation__subtitle">Developer chat with the showcase bot</p>
           </div>
           <div className="conversation__status">
             {sim.callbackNotice ? <span className="status status--notice">{sim.callbackNotice}</span> : null}
