@@ -8,12 +8,15 @@ import (
 
 	"github.com/Zulut30/local-telegram-client/internal/events"
 	"github.com/Zulut30/local-telegram-client/internal/store"
+	"github.com/Zulut30/local-telegram-client/internal/tg"
+	"github.com/Zulut30/local-telegram-client/internal/webhook"
 )
 
 type Handler struct {
-	store  store.Store
-	logger *slog.Logger
-	hub    *events.Hub
+	store    store.Store
+	logger   *slog.Logger
+	hub      *events.Hub
+	webhooks *webhook.Manager
 }
 
 type injectRequest struct {
@@ -32,8 +35,8 @@ type response struct {
 	Result any  `json:"result,omitempty"`
 }
 
-func New(st store.Store, logger *slog.Logger, hub *events.Hub) *Handler {
-	return &Handler{store: st, logger: logger, hub: hub}
+func New(st store.Store, logger *slog.Logger, hub *events.Hub, webhooks *webhook.Manager) *Handler {
+	return &Handler{store: st, logger: logger, hub: hub, webhooks: webhooks}
 }
 
 func (h *Handler) Inject(w http.ResponseWriter, r *http.Request) {
@@ -73,6 +76,9 @@ func (h *Handler) injectText(w http.ResponseWriter, r *http.Request, req injectR
 	if h.hub != nil && update.Message != nil {
 		h.hub.Broadcast("message", map[string]any{"op": "created", "message": update.Message})
 	}
+	if !h.deliverWebhook(w, r, update) {
+		return
+	}
 	writeJSON(w, http.StatusOK, response{OK: true, Result: update})
 }
 
@@ -99,7 +105,29 @@ func (h *Handler) injectCallback(w http.ResponseWriter, r *http.Request, req inj
 		writeError(w, http.StatusInternalServerError, "inject callback")
 		return
 	}
+	if !h.deliverWebhook(w, r, update) {
+		return
+	}
 	writeJSON(w, http.StatusOK, response{OK: true, Result: update})
+}
+
+func (h *Handler) deliverWebhook(w http.ResponseWriter, r *http.Request, update tg.Update) bool {
+	if h.webhooks == nil {
+		return true
+	}
+	delivered, err := h.webhooks.Deliver(r.Context(), update)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "webhook delivery failed")
+		return false
+	}
+	if delivered {
+		if err := h.store.AckUpdates(r.Context(), update.UpdateID+1); err != nil {
+			h.logger.Error("ack webhook update", "error", err)
+			writeError(w, http.StatusInternalServerError, "ack webhook update")
+			return false
+		}
+	}
+	return true
 }
 
 func (h *Handler) State(w http.ResponseWriter, r *http.Request) {

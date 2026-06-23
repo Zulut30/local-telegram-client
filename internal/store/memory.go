@@ -15,6 +15,7 @@ type Store interface {
 	InjectText(ctx context.Context, input TextInput) (tg.Update, error)
 	InjectCallback(ctx context.Context, input CallbackInput) (tg.Update, error)
 	GetUpdates(ctx context.Context, offset int64, limit int, timeout time.Duration) ([]tg.Update, error)
+	AckUpdates(ctx context.Context, offset int64) error
 	SaveBotMessage(ctx context.Context, input BotMessageInput) (tg.Message, error)
 	EditMessageText(ctx context.Context, input EditMessageTextInput) (tg.Message, error)
 	EditMessageReplyMarkup(ctx context.Context, input EditMessageReplyMarkupInput) (tg.Message, error)
@@ -198,6 +199,16 @@ func (m *Memory) GetUpdates(ctx context.Context, offset int64, limit int, timeou
 		case <-notify:
 		}
 	}
+}
+
+func (m *Memory) AckUpdates(_ context.Context, offset int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if offset > 0 {
+		m.dropBeforeLocked(offset)
+	}
+	return nil
 }
 
 func (m *Memory) SaveBotMessage(_ context.Context, input BotMessageInput) (tg.Message, error) {

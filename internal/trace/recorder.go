@@ -94,6 +94,28 @@ func (r *Recorder) OpenForUpdates(updates []tg.Update) {
 	}
 }
 
+func (r *Recorder) OpenWebhook(update tg.Update) (string, bool) {
+	inbound, ok := inboundFromUpdate(update)
+	if !ok {
+		return "", false
+	}
+	return r.open(inbound), true
+}
+
+func (r *Recorder) CloseWebhook(id string, ok bool) {
+	if id == "" {
+		return
+	}
+	if !ok {
+		r.mu.Lock()
+		if trace, exists := r.traces[id]; exists && trace.FinishedAt == nil {
+			trace.Status = StatusError
+		}
+		r.mu.Unlock()
+	}
+	r.close(id)
+}
+
 func (r *Recorder) FlushOpen() {
 	r.mu.Lock()
 	ids := make([]string, 0, len(r.activeByChat))
@@ -170,7 +192,7 @@ func (r *Recorder) Snapshot() []Trace {
 	return out
 }
 
-func (r *Recorder) open(inbound InboundEvent) {
+func (r *Recorder) open(inbound InboundEvent) string {
 	r.mu.Lock()
 	trace := r.newTraceLocked(&inbound, false)
 	r.activeByChat[inbound.ChatID] = trace.ID
@@ -186,6 +208,7 @@ func (r *Recorder) open(inbound InboundEvent) {
 	r.mu.Unlock()
 
 	r.broadcast("open", snapshot)
+	return snapshot.ID
 }
 
 func (r *Recorder) close(id string) {

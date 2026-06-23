@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"github.com/Zulut30/local-telegram-client/internal/store"
 	"github.com/Zulut30/local-telegram-client/internal/tg"
 	tracing "github.com/Zulut30/local-telegram-client/internal/trace"
+	"github.com/Zulut30/local-telegram-client/internal/webhook"
 )
 
 type Handler struct {
@@ -29,9 +31,10 @@ type Handler struct {
 	bot      tg.User
 	hub      *events.Hub
 	recorder *tracing.Recorder
+	webhooks *webhook.Manager
 }
 
-func New(cfg config.Config, st store.Store, logger *slog.Logger, hub *events.Hub, recorder *tracing.Recorder) *Handler {
+func New(cfg config.Config, st store.Store, logger *slog.Logger, hub *events.Hub, recorder *tracing.Recorder, webhooks *webhook.Manager) *Handler {
 	return &Handler{
 		cfg:      cfg,
 		store:    st,
@@ -39,6 +42,7 @@ func New(cfg config.Config, st store.Store, logger *slog.Logger, hub *events.Hub
 		bot:      BotUser(cfg.BotToken),
 		hub:      hub,
 		recorder: recorder,
+		webhooks: webhooks,
 	}
 }
 
@@ -80,6 +84,12 @@ func (h *Handler) dispatch(w http.ResponseWriter, r *http.Request, method string
 		writeOK(w, h.bot)
 	case "getUpdates":
 		h.handleGetUpdates(w, r, params)
+	case "setWebhook":
+		h.handleSetWebhook(w, r, params)
+	case "deleteWebhook":
+		h.handleDeleteWebhook(w, r, params)
+	case "getWebhookInfo":
+		h.handleGetWebhookInfo(w)
 	case "sendMessage":
 		h.handleSendMessage(w, r, params)
 	case "editMessageText":
@@ -148,6 +158,10 @@ func BotUser(token string) tg.User {
 }
 
 func (h *Handler) handleGetUpdates(w http.ResponseWriter, r *http.Request, params parameters) {
+	if h.webhooks != nil && h.webhooks.Active() {
+		writeError(w, http.StatusConflict, 409, "Conflict: can't use getUpdates method while webhook is active")
+		return
+	}
 	if h.recorder != nil {
 		h.recorder.FlushOpen()
 	}
@@ -180,6 +194,67 @@ func (h *Handler) handleGetUpdates(w http.ResponseWriter, r *http.Request, param
 		h.recorder.OpenForUpdates(updates)
 	}
 	writeOK(w, updates)
+}
+
+func (h *Handler) handleSetWebhook(w http.ResponseWriter, r *http.Request, params parameters) {
+	rawURL, _ := params.String("url", "")
+	if rawURL == "" {
+		writeError(w, http.StatusBadRequest, 400, "url is required")
+		return
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		writeError(w, http.StatusBadRequest, 400, "url must be absolute")
+		return
+	}
+	switch parsed.Scheme {
+	case "http", "https":
+	default:
+		writeError(w, http.StatusBadRequest, 400, "url scheme must be http or https")
+		return
+	}
+	dropPending, err := params.Bool("drop_pending_updates", false)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, 400, "drop_pending_updates must be boolean")
+		return
+	}
+
+	if h.webhooks != nil {
+		h.webhooks.Set(rawURL)
+	}
+	if dropPending {
+		if err := h.store.AckUpdates(r.Context(), 1<<62); err != nil {
+			writeError(w, http.StatusInternalServerError, 500, err.Error())
+			return
+		}
+	}
+	writeOK(w, true)
+}
+
+func (h *Handler) handleDeleteWebhook(w http.ResponseWriter, r *http.Request, params parameters) {
+	dropPending, err := params.Bool("drop_pending_updates", false)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, 400, "drop_pending_updates must be boolean")
+		return
+	}
+	if h.webhooks != nil {
+		h.webhooks.Delete()
+	}
+	if dropPending {
+		if err := h.store.AckUpdates(r.Context(), 1<<62); err != nil {
+			writeError(w, http.StatusInternalServerError, 500, err.Error())
+			return
+		}
+	}
+	writeOK(w, true)
+}
+
+func (h *Handler) handleGetWebhookInfo(w http.ResponseWriter) {
+	if h.webhooks == nil {
+		writeOK(w, webhook.Info{})
+		return
+	}
+	writeOK(w, h.webhooks.Info())
 }
 
 func (h *Handler) handleSendMessage(w http.ResponseWriter, r *http.Request, params parameters) {

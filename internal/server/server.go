@@ -15,6 +15,7 @@ import (
 	"github.com/Zulut30/local-telegram-client/internal/sim"
 	"github.com/Zulut30/local-telegram-client/internal/store"
 	tracing "github.com/Zulut30/local-telegram-client/internal/trace"
+	"github.com/Zulut30/local-telegram-client/internal/webhook"
 	"github.com/Zulut30/local-telegram-client/internal/webui"
 )
 
@@ -25,10 +26,11 @@ func New(cfg config.Config, logger *slog.Logger) http.Handler {
 func NewWithStore(cfg config.Config, logger *slog.Logger, st store.Store) http.Handler {
 	hub := events.NewHub(cfg.BufferSize)
 	recorder := tracing.NewRecorder(cfg.BufferSize, hub)
+	webhooks := webhook.New(logger, recorder)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", healthz)
-	simHandler := sim.New(st, logger, hub)
+	simHandler := sim.New(st, logger, hub, webhooks)
 	mux.HandleFunc("POST /_sim/inject", simHandler.Inject)
 	mux.HandleFunc("GET /_sim/state", simHandler.State)
 	mux.HandleFunc("GET /_sim/traces", func(w http.ResponseWriter, _ *http.Request) {
@@ -37,7 +39,7 @@ func NewWithStore(cfg config.Config, logger *slog.Logger, st store.Store) http.H
 	mux.Handle("GET /_sim/events", hub)
 	mux.Handle("GET /", webui.Handler())
 
-	botHandler := botapi.New(cfg, st, logger, hub, recorder)
+	botHandler := botapi.New(cfg, st, logger, hub, recorder, webhooks)
 	var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/bot") {
 			botHandler.ServeHTTP(w, r)

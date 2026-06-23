@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 	"github.com/Zulut30/local-telegram-client/internal/store"
 	"github.com/Zulut30/local-telegram-client/internal/tg"
 	tracing "github.com/Zulut30/local-telegram-client/internal/trace"
+	"github.com/Zulut30/local-telegram-client/internal/webhook"
 )
 
 func TestSSETraceCorrelation(t *testing.T) {
@@ -233,6 +235,138 @@ func TestSSECallbackTraceCorrelation(t *testing.T) {
 	}
 }
 
+func TestWebhookDeliveryAndTraceCorrelation(t *testing.T) {
+	st := store.NewMemory()
+	cfg := config.Config{Mode: config.ModeLocal, BotToken: "1234567890:aaaabbbbaaaabbbbaaaabbbbaaaabbbbccc", BufferSize: 100}
+	handler := NewWithStore(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), st)
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+
+	events, stopSSE := startSSE(t, srv.URL)
+	t.Cleanup(stopSSE)
+
+	received := make(chan tg.Update, 1)
+	handlerErrs := make(chan error, 1)
+	webhookSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		var update tg.Update
+		if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
+			http.Error(w, "decode update", http.StatusBadRequest)
+			return
+		}
+		select {
+		case received <- update:
+		default:
+		}
+		if update.Message != nil {
+			err := postWebhookBotCall(srv.URL, cfg.BotToken, "sendMessage", map[string]any{
+				"chat_id": update.Message.Chat.ID,
+				"text":    "webhook pong",
+			})
+			if err != nil {
+				select {
+				case handlerErrs <- err:
+				default:
+				}
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(webhookSrv.Close)
+
+	setEnv := botCall(t, srv.URL, cfg.BotToken, "setWebhook", map[string]any{
+		"url": webhookSrv.URL,
+	}, http.StatusOK)
+	if ok := decodeBotResult[bool](t, setEnv); !ok {
+		t.Fatal("setWebhook result = false, want true")
+	}
+
+	infoEnv := botCall(t, srv.URL, cfg.BotToken, "getWebhookInfo", map[string]any{}, http.StatusOK)
+	info := decodeBotResult[webhook.Info](t, infoEnv)
+	if info.URL != webhookSrv.URL {
+		t.Fatalf("webhook info URL = %q, want %q", info.URL, webhookSrv.URL)
+	}
+
+	conflictEnv := botCall(t, srv.URL, cfg.BotToken, "getUpdates", map[string]any{"timeout": 0}, http.StatusConflict)
+	if conflictEnv.OK || conflictEnv.ErrorCode != http.StatusConflict {
+		t.Fatalf("getUpdates conflict response = %#v, want 409 error", conflictEnv)
+	}
+
+	injectBody := bytes.NewBufferString(`{"type":"message","chat_id":77,"user_id":7,"username":"dev","text":"/hook"}`)
+	resp, err := http.Post(srv.URL+"/_sim/inject", "application/json", injectBody)
+	if err != nil {
+		t.Fatalf("inject webhook message request failed: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("inject webhook status = %d, body = %s", resp.StatusCode, body)
+	}
+
+	delivered := waitWebhookUpdate(t, received)
+	if delivered.Message == nil || delivered.Message.Text != "/hook" || delivered.Message.Chat.ID != 77 {
+		t.Fatalf("delivered update = %#v, want /hook message for chat 77", delivered)
+	}
+	select {
+	case err := <-handlerErrs:
+		t.Fatalf("webhook handler bot call failed: %v", err)
+	default:
+	}
+
+	openTrace := waitTraceEvent(t, events, func(payload tracing.EventPayload) bool {
+		return payload.Op == "open" &&
+			payload.Trace.Inbound != nil &&
+			payload.Trace.Inbound.Type == "message" &&
+			payload.Trace.Inbound.UpdateID == delivered.UpdateID &&
+			payload.Trace.Inbound.ChatID == 77
+	})
+	updatedTrace := waitTraceEvent(t, events, func(payload tracing.EventPayload) bool {
+		return payload.Op == "update" &&
+			payload.Trace.ID == openTrace.Trace.ID &&
+			traceHasCalls(payload.Trace, "sendMessage")
+	})
+	if updatedTrace.Trace.Calls[0].Correlation != tracing.CorrelationInferred {
+		t.Fatalf("webhook call correlation = %q, want inferred", updatedTrace.Trace.Calls[0].Correlation)
+	}
+	closedTrace := waitTraceEvent(t, events, func(payload tracing.EventPayload) bool {
+		return payload.Op == "close" && payload.Trace.ID == openTrace.Trace.ID
+	})
+	if closedTrace.Trace.Status != tracing.StatusOK {
+		t.Fatalf("webhook trace status = %q, want ok", closedTrace.Trace.Status)
+	}
+
+	state, err := st.State(context.Background())
+	if err != nil {
+		t.Fatalf("State returned error: %v", err)
+	}
+	messages := state.Messages["77"]
+	if len(messages) != 2 {
+		encoded, _ := json.Marshal(messages)
+		t.Fatalf("stored webhook messages length = %d, want 2: %s", len(messages), encoded)
+	}
+	if messages[0].Text != "/hook" || messages[1].Text != "webhook pong" {
+		t.Fatalf("stored webhook texts = %q, %q", messages[0].Text, messages[1].Text)
+	}
+
+	deleteEnv := botCall(t, srv.URL, cfg.BotToken, "deleteWebhook", map[string]any{}, http.StatusOK)
+	if ok := decodeBotResult[bool](t, deleteEnv); !ok {
+		t.Fatal("deleteWebhook result = false, want true")
+	}
+	emptyInfoEnv := botCall(t, srv.URL, cfg.BotToken, "getWebhookInfo", map[string]any{}, http.StatusOK)
+	emptyInfo := decodeBotResult[webhook.Info](t, emptyInfoEnv)
+	if emptyInfo.URL != "" {
+		t.Fatalf("webhook info URL after delete = %q, want empty", emptyInfo.URL)
+	}
+
+	pollEnv := botCall(t, srv.URL, cfg.BotToken, "getUpdates", map[string]any{"limit": 10, "timeout": 0}, http.StatusOK)
+	polled := decodeBotResult[[]tg.Update](t, pollEnv)
+	if len(polled) != 0 {
+		t.Fatalf("polled updates after webhook ack = %d, want 0", len(polled))
+	}
+}
+
 type sseEvent struct {
 	name string
 	data []byte
@@ -364,4 +498,40 @@ func traceHasCalls(trace tracing.Trace, methods ...string) bool {
 		}
 	}
 	return true
+}
+
+func waitWebhookUpdate(t *testing.T, ch <-chan tg.Update) tg.Update {
+	t.Helper()
+
+	select {
+	case update := <-ch:
+		return update
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for webhook update")
+		return tg.Update{}
+	}
+}
+
+func postWebhookBotCall(baseURL, token, method string, body any) error {
+	raw, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	resp, err := http.Post(baseURL+"/bot"+token+"/"+method, "application/json", bytes.NewReader(raw))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("%s returned HTTP %d: %s", method, resp.StatusCode, respBody)
+	}
+	var env botAPIEnvelope
+	if err := json.Unmarshal(respBody, &env); err != nil {
+		return err
+	}
+	if !env.OK {
+		return fmt.Errorf("%s returned error %d: %s", method, env.ErrorCode, env.Description)
+	}
+	return nil
 }
