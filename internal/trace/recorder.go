@@ -30,11 +30,12 @@ type Trace struct {
 }
 
 type InboundEvent struct {
-	UpdateID int64     `json:"update_id"`
-	Type     string    `json:"type"`
-	ChatID   int64     `json:"chat_id"`
-	Text     string    `json:"text,omitempty"`
-	At       time.Time `json:"at"`
+	UpdateID        int64     `json:"update_id"`
+	Type            string    `json:"type"`
+	ChatID          int64     `json:"chat_id"`
+	CallbackQueryID string    `json:"callback_query_id,omitempty"`
+	Text            string    `json:"text,omitempty"`
+	At              time.Time `json:"at"`
 }
 
 type OutboundCall struct {
@@ -63,6 +64,7 @@ type Recorder struct {
 	ring         []Trace
 	traces       map[string]*Trace
 	activeByChat map[int64]string
+	activeByCB   map[string]string
 	timers       map[string]*time.Timer
 }
 
@@ -77,6 +79,7 @@ func NewRecorder(limit int, hub *events.Hub) *Recorder {
 		nextID:       1,
 		traces:       make(map[string]*Trace),
 		activeByChat: make(map[int64]string),
+		activeByCB:   make(map[string]string),
 		timers:       make(map[string]*time.Timer),
 	}
 }
@@ -104,7 +107,7 @@ func (r *Recorder) FlushOpen() {
 	}
 }
 
-func (r *Recorder) RecordCall(chatID *int64, call OutboundCall) {
+func (r *Recorder) RecordCall(chatID *int64, callbackQueryID string, call OutboundCall) {
 	call.At = time.Now().UTC()
 	call.Correlation = CorrelationInferred
 	call.Params = TrimParams(call.Params)
@@ -112,6 +115,20 @@ func (r *Recorder) RecordCall(chatID *int64, call OutboundCall) {
 	r.mu.Lock()
 	if chatID != nil {
 		if id, ok := r.activeByChat[*chatID]; ok {
+			trace := r.traces[id]
+			trace.Calls = append(trace.Calls, call)
+			if !call.OK {
+				trace.Status = StatusError
+			}
+			snapshot := cloneTrace(*trace)
+			r.upsertLocked(*trace)
+			r.mu.Unlock()
+			r.broadcast("update", snapshot)
+			return
+		}
+	}
+	if callbackQueryID != "" {
+		if id, ok := r.activeByCB[callbackQueryID]; ok {
 			trace := r.traces[id]
 			trace.Calls = append(trace.Calls, call)
 			if !call.OK {
@@ -157,6 +174,9 @@ func (r *Recorder) open(inbound InboundEvent) {
 	r.mu.Lock()
 	trace := r.newTraceLocked(&inbound, false)
 	r.activeByChat[inbound.ChatID] = trace.ID
+	if inbound.CallbackQueryID != "" {
+		r.activeByCB[inbound.CallbackQueryID] = trace.ID
+	}
 	r.upsertLocked(*trace)
 	snapshot := cloneTrace(*trace)
 	timer := time.AfterFunc(r.windowTTL, func() {
@@ -182,6 +202,9 @@ func (r *Recorder) close(id string) {
 	trace.FinishedAt = &now
 	if trace.Inbound != nil {
 		delete(r.activeByChat, trace.Inbound.ChatID)
+		if trace.Inbound.CallbackQueryID != "" {
+			delete(r.activeByCB, trace.Inbound.CallbackQueryID)
+		}
 	}
 	if timer := r.timers[id]; timer != nil {
 		timer.Stop()
@@ -243,11 +266,12 @@ func inboundFromUpdate(update tg.Update) (InboundEvent, bool) {
 	}
 	if update.CallbackQuery != nil && update.CallbackQuery.Message != nil {
 		return InboundEvent{
-			UpdateID: update.UpdateID,
-			Type:     "callback_query",
-			ChatID:   update.CallbackQuery.Message.Chat.ID,
-			Text:     update.CallbackQuery.Data,
-			At:       time.Now().UTC(),
+			UpdateID:        update.UpdateID,
+			Type:            "callback_query",
+			ChatID:          update.CallbackQuery.Message.Chat.ID,
+			CallbackQueryID: update.CallbackQuery.ID,
+			Text:            update.CallbackQuery.Data,
+			At:              time.Now().UTC(),
 		}, true
 	}
 	return InboundEvent{}, false

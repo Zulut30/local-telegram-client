@@ -75,6 +75,18 @@ button:disabled {
   color: #9d3f25;
 }
 
+.status--notice {
+  border-color: #99bfd4;
+  color: #174b67;
+}
+
+.conversation__status {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 .chat-list__items {
   display: grid;
   gap: 8px;

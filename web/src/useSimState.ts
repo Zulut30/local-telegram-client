@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { injectCallback, injectText, loadState } from './api';
-import type { Chat, Message, MessageEventPayload, SimState } from './types';
+import type { CallbackAnswerEventPayload, Chat, Message, MessageEventPayload, SimState } from './types';
 
 const fallbackChat: Chat = {
   id: 1,
@@ -33,6 +33,8 @@ export function useSimState() {
   const [selectedChatID, setSelectedChatID] = useState<number>(fallbackChat.id);
   const [status, setStatus] = useState<'connecting' | 'live' | 'offline'>('connecting');
   const [error, setError] = useState<string | null>(null);
+  const [callbackNotice, setCallbackNotice] = useState<string | null>(null);
+  const callbackNoticeTimer = useRef<number | null>(null);
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
     const next = await loadState(signal);
@@ -66,7 +68,23 @@ export function useSimState() {
       setState((current) => applyMessage(current, payload));
       setSelectedChatID((current) => current || payload.message.chat.id);
     });
-    return () => source.close();
+    source.addEventListener('callback_answer', (event) => {
+      const payload = JSON.parse(event.data) as CallbackAnswerEventPayload;
+      setCallbackNotice(payload.text || 'Callback answered');
+      if (callbackNoticeTimer.current !== null) {
+        window.clearTimeout(callbackNoticeTimer.current);
+      }
+      callbackNoticeTimer.current = window.setTimeout(() => {
+        setCallbackNotice(null);
+        callbackNoticeTimer.current = null;
+      }, payload.show_alert ? 5000 : 2400);
+    });
+    return () => {
+      source.close();
+      if (callbackNoticeTimer.current !== null) {
+        window.clearTimeout(callbackNoticeTimer.current);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -104,6 +122,7 @@ export function useSimState() {
     selectedMessages,
     status,
     error,
+    callbackNotice,
     setSelectedChatID,
     sendText,
     sendCallback,

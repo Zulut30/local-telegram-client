@@ -82,7 +82,16 @@ func (h *Handler) dispatch(w http.ResponseWriter, r *http.Request, method string
 		h.handleGetUpdates(w, r, params)
 	case "sendMessage":
 		h.handleSendMessage(w, r, params)
+	case "editMessageText":
+		h.handleEditMessageText(w, r, params)
+	case "editMessageReplyMarkup":
+		h.handleEditMessageReplyMarkup(w, r, params)
+	case "deleteMessage":
+		h.handleDeleteMessage(w, r, params)
+	case "answerCallbackQuery":
+		h.handleAnswerCallbackQuery(w, params)
 	default:
+		params["_sim_unimplemented"] = true
 		h.logger.Info("unimplemented bot api method", "method", method)
 		writeOK(w, true)
 	}
@@ -103,7 +112,8 @@ func (h *Handler) recordCall(method string, params parameters, latency time.Dura
 		return
 	}
 	chatID := params.ChatID()
-	h.recorder.RecordCall(chatID, tracing.OutboundCall{
+	callbackQueryID, _ := params.String("callback_query_id", "")
+	h.recorder.RecordCall(chatID, callbackQueryID, tracing.OutboundCall{
 		Method:     method,
 		Params:     params.TraceParams(),
 		HTTPStatus: meta.httpStatus,
@@ -209,6 +219,130 @@ func (h *Handler) handleSendMessage(w http.ResponseWriter, r *http.Request, para
 		h.hub.Broadcast("message", map[string]any{"op": "created", "message": msg})
 	}
 	writeOK(w, msg)
+}
+
+func (h *Handler) handleEditMessageText(w http.ResponseWriter, r *http.Request, params parameters) {
+	chatID, err := params.Int64("chat_id", 0)
+	if err != nil || chatID == 0 {
+		writeError(w, http.StatusBadRequest, 400, "chat_id is required")
+		return
+	}
+	messageID, err := params.Int64("message_id", 0)
+	if err != nil || messageID == 0 {
+		writeError(w, http.StatusBadRequest, 400, "message_id is required")
+		return
+	}
+	text, _ := params.String("text", "")
+	if text == "" {
+		writeError(w, http.StatusBadRequest, 400, "text is required")
+		return
+	}
+	replyMarkup, err := params.RawJSON("reply_markup")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, 400, "reply_markup must be valid JSON")
+		return
+	}
+
+	msg, err := h.store.EditMessageText(r.Context(), store.EditMessageTextInput{
+		ChatID:      chatID,
+		MessageID:   messageID,
+		Text:        text,
+		ReplyMarkup: replyMarkup,
+	})
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	h.broadcastMessage("edited", msg)
+	writeOK(w, msg)
+}
+
+func (h *Handler) handleEditMessageReplyMarkup(w http.ResponseWriter, r *http.Request, params parameters) {
+	chatID, err := params.Int64("chat_id", 0)
+	if err != nil || chatID == 0 {
+		writeError(w, http.StatusBadRequest, 400, "chat_id is required")
+		return
+	}
+	messageID, err := params.Int64("message_id", 0)
+	if err != nil || messageID == 0 {
+		writeError(w, http.StatusBadRequest, 400, "message_id is required")
+		return
+	}
+	replyMarkup, err := params.RawJSON("reply_markup")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, 400, "reply_markup must be valid JSON")
+		return
+	}
+
+	msg, err := h.store.EditMessageReplyMarkup(r.Context(), store.EditMessageReplyMarkupInput{
+		ChatID:      chatID,
+		MessageID:   messageID,
+		ReplyMarkup: replyMarkup,
+	})
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	h.broadcastMessage("edited", msg)
+	writeOK(w, msg)
+}
+
+func (h *Handler) handleDeleteMessage(w http.ResponseWriter, r *http.Request, params parameters) {
+	chatID, err := params.Int64("chat_id", 0)
+	if err != nil || chatID == 0 {
+		writeError(w, http.StatusBadRequest, 400, "chat_id is required")
+		return
+	}
+	messageID, err := params.Int64("message_id", 0)
+	if err != nil || messageID == 0 {
+		writeError(w, http.StatusBadRequest, 400, "message_id is required")
+		return
+	}
+
+	msg, err := h.store.DeleteMessage(r.Context(), chatID, messageID)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	h.broadcastMessage("deleted", msg)
+	writeOK(w, true)
+}
+
+func (h *Handler) handleAnswerCallbackQuery(w http.ResponseWriter, params parameters) {
+	callbackID, _ := params.String("callback_query_id", "")
+	if callbackID == "" {
+		writeError(w, http.StatusBadRequest, 400, "callback_query_id is required")
+		return
+	}
+	text, _ := params.String("text", "")
+	showAlert, err := params.Bool("show_alert", false)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, 400, "show_alert must be boolean")
+		return
+	}
+	if h.hub != nil {
+		h.hub.Broadcast("callback_answer", map[string]any{
+			"callback_query_id": callbackID,
+			"text":              text,
+			"show_alert":        showAlert,
+		})
+	}
+	writeOK(w, true)
+}
+
+func (h *Handler) broadcastMessage(op string, msg tg.Message) {
+	if h.hub == nil {
+		return
+	}
+	h.hub.Broadcast("message", map[string]any{"op": op, "message": msg})
+}
+
+func writeStoreError(w http.ResponseWriter, err error) {
+	if errors.Is(err, store.ErrMessageNotFound) {
+		writeError(w, http.StatusBadRequest, 400, "message not found")
+		return
+	}
+	writeError(w, http.StatusInternalServerError, 500, err.Error())
 }
 
 func parseBotPath(path string) (string, string, bool) {
@@ -422,6 +556,24 @@ func (p parameters) Int64(key string, fallback int64) (int64, error) {
 		return strconv.ParseInt(typed, 10, 64)
 	default:
 		return 0, fmt.Errorf("%s must be an integer", key)
+	}
+}
+
+func (p parameters) Bool(key string, fallback bool) (bool, error) {
+	value, ok := p[key]
+	if !ok || value == nil {
+		return fallback, nil
+	}
+	switch typed := value.(type) {
+	case bool:
+		return typed, nil
+	case string:
+		if typed == "" {
+			return fallback, nil
+		}
+		return strconv.ParseBool(typed)
+	default:
+		return false, fmt.Errorf("%s must be boolean", key)
 	}
 }
 

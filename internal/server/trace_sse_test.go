@@ -17,6 +17,7 @@ import (
 
 	"github.com/Zulut30/local-telegram-client/internal/config"
 	"github.com/Zulut30/local-telegram-client/internal/store"
+	"github.com/Zulut30/local-telegram-client/internal/tg"
 	tracing "github.com/Zulut30/local-telegram-client/internal/trace"
 )
 
@@ -121,6 +122,117 @@ func TestSSETraceCorrelation(t *testing.T) {
 	}
 }
 
+func TestSSECallbackTraceCorrelation(t *testing.T) {
+	st := store.NewMemory()
+	cfg := config.Config{Mode: config.ModeLocal, BotToken: "1234567890:aaaabbbbaaaabbbbaaaabbbbaaaabbbbccc", BufferSize: 100}
+	handler := NewWithStore(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), st)
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+
+	events, stopSSE := startSSE(t, srv.URL)
+	t.Cleanup(stopSSE)
+
+	sendEnv := botCall(t, srv.URL, cfg.BotToken, "sendMessage", map[string]any{
+		"chat_id": 42,
+		"text":    "Choose",
+		"reply_markup": map[string]any{
+			"inline_keyboard": [][]map[string]string{{
+				{"text": "Open", "callback_data": "open"},
+			}},
+		},
+	}, http.StatusOK)
+	sent := decodeBotResult[tg.Message](t, sendEnv)
+	_ = waitEventPayload[messageEventPayload](t, events, "message", func(payload messageEventPayload) bool {
+		return payload.Op == "created" && payload.Message.MessageID == sent.MessageID
+	})
+
+	bot, err := telego.NewBot(cfg.BotToken, telego.WithAPIServer(srv.URL), telego.WithDiscardLogger())
+	if err != nil {
+		t.Fatalf("NewBot returned error: %v", err)
+	}
+
+	injectPayload, err := json.Marshal(map[string]any{
+		"type":       "callback_query",
+		"chat_id":    42,
+		"message_id": sent.MessageID,
+		"user_id":    7,
+		"username":   "dev",
+		"data":       "open",
+	})
+	if err != nil {
+		t.Fatalf("marshal inject payload: %v", err)
+	}
+	resp, err := http.Post(srv.URL+"/_sim/inject", "application/json", bytes.NewReader(injectPayload))
+	if err != nil {
+		t.Fatalf("inject callback request failed: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("inject callback status = %d, want 200", resp.StatusCode)
+	}
+
+	updates, err := bot.GetUpdates(&telego.GetUpdatesParams{Limit: 10, Timeout: 1})
+	if err != nil {
+		t.Fatalf("GetUpdates returned error: %v", err)
+	}
+	if len(updates) != 1 || updates[0].CallbackQuery == nil {
+		t.Fatalf("updates = %#v, want one callback query", updates)
+	}
+	callbackID := updates[0].CallbackQuery.ID
+
+	openTrace := waitTraceEvent(t, events, func(payload tracing.EventPayload) bool {
+		return payload.Op == "open" &&
+			payload.Trace.Inbound != nil &&
+			payload.Trace.Inbound.Type == "callback_query" &&
+			payload.Trace.Inbound.CallbackQueryID == callbackID
+	})
+	if openTrace.Trace.Orphan {
+		t.Fatal("callback trace is orphan, want inbound-correlated trace")
+	}
+
+	answerEnv := botCall(t, srv.URL, cfg.BotToken, "answerCallbackQuery", map[string]any{
+		"callback_query_id": callbackID,
+		"text":              "Opened",
+	}, http.StatusOK)
+	if ok := decodeBotResult[bool](t, answerEnv); !ok {
+		t.Fatal("answerCallbackQuery result = false, want true")
+	}
+
+	editEnv := botCall(t, srv.URL, cfg.BotToken, "editMessageText", map[string]any{
+		"chat_id":    42,
+		"message_id": sent.MessageID,
+		"text":       "Opened",
+	}, http.StatusOK)
+	edited := decodeBotResult[tg.Message](t, editEnv)
+	if edited.Text != "Opened" {
+		t.Fatalf("edited text = %q, want Opened", edited.Text)
+	}
+
+	updatedTrace := waitTraceEvent(t, events, func(payload tracing.EventPayload) bool {
+		return payload.Op == "update" &&
+			payload.Trace.ID == openTrace.Trace.ID &&
+			traceHasCalls(payload.Trace, "answerCallbackQuery", "editMessageText")
+	})
+	if updatedTrace.Trace.Orphan {
+		t.Fatal("updated callback trace is orphan")
+	}
+	for _, call := range updatedTrace.Trace.Calls {
+		if call.Method == "answerCallbackQuery" && call.Correlation != tracing.CorrelationInferred {
+			t.Fatalf("answerCallbackQuery correlation = %q, want inferred", call.Correlation)
+		}
+	}
+
+	if _, err := bot.GetUpdates(&telego.GetUpdatesParams{Offset: updates[0].UpdateID + 1}); err != nil {
+		t.Fatalf("flush GetUpdates returned error: %v", err)
+	}
+	closedTrace := waitTraceEvent(t, events, func(payload tracing.EventPayload) bool {
+		return payload.Op == "close" && payload.Trace.ID == openTrace.Trace.ID
+	})
+	if closedTrace.Trace.Status != tracing.StatusOK {
+		t.Fatalf("closed trace status = %q, want ok", closedTrace.Trace.Status)
+	}
+}
+
 type sseEvent struct {
 	name string
 	data []byte
@@ -185,6 +297,36 @@ func startSSE(t *testing.T, baseURL string) (<-chan sseEvent, context.CancelFunc
 	return ch, cancel
 }
 
+func waitEventPayload[T any](t *testing.T, events <-chan sseEvent, name string, match func(T) bool) T {
+	t.Helper()
+
+	timeout := time.After(2 * time.Second)
+	for {
+		select {
+		case <-timeout:
+			var zero T
+			t.Fatalf("timed out waiting for %s SSE event", name)
+			return zero
+		case ev, ok := <-events:
+			if !ok {
+				var zero T
+				t.Fatal("SSE stream closed")
+				return zero
+			}
+			if ev.name != name {
+				continue
+			}
+			var payload T
+			if err := json.Unmarshal(ev.data, &payload); err != nil {
+				t.Fatalf("decode %s event %q: %v", name, ev.data, err)
+			}
+			if match == nil || match(payload) {
+				return payload
+			}
+		}
+	}
+}
+
 func waitTraceEvent(t *testing.T, events <-chan sseEvent, match func(tracing.EventPayload) bool) tracing.EventPayload {
 	t.Helper()
 
@@ -209,4 +351,17 @@ func waitTraceEvent(t *testing.T, events <-chan sseEvent, match func(tracing.Eve
 			}
 		}
 	}
+}
+
+func traceHasCalls(trace tracing.Trace, methods ...string) bool {
+	found := make(map[string]bool, len(methods))
+	for _, call := range trace.Calls {
+		found[call.Method] = true
+	}
+	for _, method := range methods {
+		if !found[method] {
+			return false
+		}
+	}
+	return true
 }

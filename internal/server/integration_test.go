@@ -8,12 +8,14 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/mymmrac/telego"
 
 	"github.com/Zulut30/local-telegram-client/internal/config"
 	"github.com/Zulut30/local-telegram-client/internal/store"
+	"github.com/Zulut30/local-telegram-client/internal/tg"
 )
 
 func TestBotAPILongPollFlowWithTelego(t *testing.T) {
@@ -99,4 +101,193 @@ func TestBotAPILongPollFlowWithTelego(t *testing.T) {
 	if messages[1].From == nil || !messages[1].From.IsBot {
 		t.Fatalf("bot response From = %#v, want bot user", messages[1].From)
 	}
+}
+
+func TestBotAPIMessageMutationsAndCallbackAnswerEvents(t *testing.T) {
+	st := store.NewMemory()
+	cfg := config.Config{Mode: config.ModeLocal, BotToken: "1234567890:aaaabbbbaaaabbbbaaaabbbbaaaabbbbccc", BufferSize: 100}
+	handler := NewWithStore(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), st)
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+
+	events, stopSSE := startSSE(t, srv.URL)
+	t.Cleanup(stopSSE)
+
+	sendEnv := botCall(t, srv.URL, cfg.BotToken, "sendMessage", map[string]any{
+		"chat_id": 42,
+		"text":    "Pick one",
+		"reply_markup": map[string]any{
+			"inline_keyboard": [][]map[string]string{{
+				{"text": "Run", "callback_data": "run"},
+			}},
+		},
+	}, http.StatusOK)
+	sent := decodeBotResult[tg.Message](t, sendEnv)
+
+	created := waitEventPayload[messageEventPayload](t, events, "message", func(payload messageEventPayload) bool {
+		return payload.Op == "created" && payload.Message.MessageID == sent.MessageID
+	})
+	if created.Message.Text != "Pick one" || !rawJSONContains(created.Message.ReplyMarkup, "run") {
+		t.Fatalf("created message = %#v, want original text and inline keyboard", created.Message)
+	}
+
+	editEnv := botCall(t, srv.URL, cfg.BotToken, "editMessageText", map[string]any{
+		"chat_id":    42,
+		"message_id": sent.MessageID,
+		"text":       "Edited pick",
+		"reply_markup": map[string]any{
+			"inline_keyboard": [][]map[string]string{{
+				{"text": "Done", "callback_data": "done"},
+			}},
+		},
+	}, http.StatusOK)
+	editedResult := decodeBotResult[tg.Message](t, editEnv)
+	if editedResult.Text != "Edited pick" || !rawJSONContains(editedResult.ReplyMarkup, "done") {
+		t.Fatalf("editMessageText result = %#v, want edited text and updated markup", editedResult)
+	}
+
+	editedTextEvent := waitEventPayload[messageEventPayload](t, events, "message", func(payload messageEventPayload) bool {
+		return payload.Op == "edited" && payload.Message.MessageID == sent.MessageID && payload.Message.Text == "Edited pick"
+	})
+	if !rawJSONContains(editedTextEvent.Message.ReplyMarkup, "Done") {
+		t.Fatalf("edited text event reply_markup = %s, want Done button", editedTextEvent.Message.ReplyMarkup)
+	}
+
+	markupEnv := botCall(t, srv.URL, cfg.BotToken, "editMessageReplyMarkup", map[string]any{
+		"chat_id":    42,
+		"message_id": sent.MessageID,
+		"reply_markup": map[string]any{
+			"inline_keyboard": [][]map[string]string{{
+				{"text": "Again", "callback_data": "again"},
+			}},
+		},
+	}, http.StatusOK)
+	markupResult := decodeBotResult[tg.Message](t, markupEnv)
+	if markupResult.Text != "Edited pick" || !rawJSONContains(markupResult.ReplyMarkup, "again") {
+		t.Fatalf("editMessageReplyMarkup result = %#v, want same text and replaced markup", markupResult)
+	}
+
+	_ = waitEventPayload[messageEventPayload](t, events, "message", func(payload messageEventPayload) bool {
+		return payload.Op == "edited" &&
+			payload.Message.MessageID == sent.MessageID &&
+			payload.Message.Text == "Edited pick" &&
+			rawJSONContains(payload.Message.ReplyMarkup, "Again")
+	})
+
+	deleteEnv := botCall(t, srv.URL, cfg.BotToken, "deleteMessage", map[string]any{
+		"chat_id":    42,
+		"message_id": sent.MessageID,
+	}, http.StatusOK)
+	deletedOK := decodeBotResult[bool](t, deleteEnv)
+	if !deletedOK {
+		t.Fatal("deleteMessage result = false, want true")
+	}
+	deletedEvent := waitEventPayload[messageEventPayload](t, events, "message", func(payload messageEventPayload) bool {
+		return payload.Op == "deleted" && payload.Message.MessageID == sent.MessageID
+	})
+	if deletedEvent.Message.Text != "Edited pick" {
+		t.Fatalf("deleted event text = %q, want last edited text", deletedEvent.Message.Text)
+	}
+
+	answerEnv := botCall(t, srv.URL, cfg.BotToken, "answerCallbackQuery", map[string]any{
+		"callback_query_id": "cb_manual",
+		"text":              "Saved",
+		"show_alert":        true,
+	}, http.StatusOK)
+	if ok := decodeBotResult[bool](t, answerEnv); !ok {
+		t.Fatal("answerCallbackQuery result = false, want true")
+	}
+	answerEvent := waitEventPayload[callbackAnswerEventPayload](t, events, "callback_answer", func(payload callbackAnswerEventPayload) bool {
+		return payload.CallbackQueryID == "cb_manual"
+	})
+	if answerEvent.Text != "Saved" || !answerEvent.ShowAlert {
+		t.Fatalf("callback answer event = %#v, want alert text", answerEvent)
+	}
+
+	state, err := st.State(context.Background())
+	if err != nil {
+		t.Fatalf("State returned error: %v", err)
+	}
+	if messages := state.Messages["42"]; len(messages) != 0 {
+		encoded, _ := json.Marshal(messages)
+		t.Fatalf("stored messages length = %d, want 0 after delete: %s", len(messages), encoded)
+	}
+
+	missingEnv := botCall(t, srv.URL, cfg.BotToken, "editMessageText", map[string]any{
+		"chat_id":    42,
+		"message_id": sent.MessageID,
+		"text":       "Nope",
+	}, http.StatusBadRequest)
+	if missingEnv.OK || missingEnv.ErrorCode != 400 || missingEnv.Description != "message not found" {
+		t.Fatalf("missing edit response = %#v, want message not found 400", missingEnv)
+	}
+}
+
+type botAPIEnvelope struct {
+	OK          bool            `json:"ok"`
+	Result      json.RawMessage `json:"result,omitempty"`
+	ErrorCode   int             `json:"error_code,omitempty"`
+	Description string          `json:"description,omitempty"`
+}
+
+type messageEventPayload struct {
+	Op      string     `json:"op"`
+	Message tg.Message `json:"message"`
+}
+
+type callbackAnswerEventPayload struct {
+	CallbackQueryID string `json:"callback_query_id"`
+	Text            string `json:"text,omitempty"`
+	ShowAlert       bool   `json:"show_alert,omitempty"`
+}
+
+func botCall(t *testing.T, baseURL, token, method string, body any, wantStatus int) botAPIEnvelope {
+	t.Helper()
+
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal %s body: %v", method, err)
+	}
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/bot"+token+"/"+method, bytes.NewReader(raw))
+	if err != nil {
+		t.Fatalf("create %s request: %v", method, err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("%s request failed: %v", method, err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read %s response: %v", method, err)
+	}
+	if resp.StatusCode != wantStatus {
+		t.Fatalf("%s status = %d, want %d, body = %s", method, resp.StatusCode, wantStatus, respBody)
+	}
+
+	var env botAPIEnvelope
+	if err := json.Unmarshal(respBody, &env); err != nil {
+		t.Fatalf("decode %s response %q: %v", method, respBody, err)
+	}
+	return env
+}
+
+func decodeBotResult[T any](t *testing.T, env botAPIEnvelope) T {
+	t.Helper()
+
+	var out T
+	if len(env.Result) == 0 {
+		t.Fatalf("empty result in response %#v", env)
+	}
+	if err := json.Unmarshal(env.Result, &out); err != nil {
+		t.Fatalf("decode result %q: %v", env.Result, err)
+	}
+	return out
+}
+
+func rawJSONContains(raw json.RawMessage, needle string) bool {
+	return strings.Contains(string(raw), needle)
 }

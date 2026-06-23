@@ -16,6 +16,9 @@ type Store interface {
 	InjectCallback(ctx context.Context, input CallbackInput) (tg.Update, error)
 	GetUpdates(ctx context.Context, offset int64, limit int, timeout time.Duration) ([]tg.Update, error)
 	SaveBotMessage(ctx context.Context, input BotMessageInput) (tg.Message, error)
+	EditMessageText(ctx context.Context, input EditMessageTextInput) (tg.Message, error)
+	EditMessageReplyMarkup(ctx context.Context, input EditMessageReplyMarkupInput) (tg.Message, error)
+	DeleteMessage(ctx context.Context, chatID, messageID int64) (tg.Message, error)
 	State(ctx context.Context) (State, error)
 	Reset(ctx context.Context) error
 }
@@ -43,6 +46,19 @@ type BotMessageInput struct {
 	Text             string
 	ReplyMarkup      json.RawMessage
 	ReplyToMessageID int64
+}
+
+type EditMessageTextInput struct {
+	ChatID      int64
+	MessageID   int64
+	Text        string
+	ReplyMarkup json.RawMessage
+}
+
+type EditMessageReplyMarkupInput struct {
+	ChatID      int64
+	MessageID   int64
+	ReplyMarkup json.RawMessage
 }
 
 type State struct {
@@ -204,6 +220,50 @@ func (m *Memory) SaveBotMessage(_ context.Context, input BotMessageInput) (tg.Me
 	return msg, nil
 }
 
+func (m *Memory) EditMessageText(_ context.Context, input EditMessageTextInput) (tg.Message, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	msg, ok := m.messageRefLocked(input.ChatID, input.MessageID)
+	if !ok {
+		return tg.Message{}, ErrMessageNotFound
+	}
+	msg.Text = input.Text
+	if input.ReplyMarkup != nil {
+		msg.ReplyMarkup = input.ReplyMarkup
+	}
+	m.signalLocked()
+	return *msg, nil
+}
+
+func (m *Memory) EditMessageReplyMarkup(_ context.Context, input EditMessageReplyMarkupInput) (tg.Message, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	msg, ok := m.messageRefLocked(input.ChatID, input.MessageID)
+	if !ok {
+		return tg.Message{}, ErrMessageNotFound
+	}
+	msg.ReplyMarkup = input.ReplyMarkup
+	m.signalLocked()
+	return *msg, nil
+}
+
+func (m *Memory) DeleteMessage(_ context.Context, chatID, messageID int64) (tg.Message, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	messages := m.messages[chatID]
+	for i, msg := range messages {
+		if msg.MessageID == messageID {
+			m.messages[chatID] = append(messages[:i], messages[i+1:]...)
+			m.signalLocked()
+			return msg, nil
+		}
+	}
+	return tg.Message{}, ErrMessageNotFound
+}
+
 func (m *Memory) State(_ context.Context) (State, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -270,6 +330,19 @@ func (m *Memory) messageLocked(chatID, messageID int64) *tg.Message {
 		}
 	}
 	return nil
+}
+
+func (m *Memory) messageRefLocked(chatID, messageID int64) (*tg.Message, bool) {
+	if messageID == 0 {
+		return nil, false
+	}
+	messages := m.messages[chatID]
+	for i := range messages {
+		if messages[i].MessageID == messageID {
+			return &m.messages[chatID][i], true
+		}
+	}
+	return nil, false
 }
 
 func (m *Memory) dropBeforeLocked(offset int64) {

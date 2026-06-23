@@ -23,7 +23,10 @@ export function App() {
             <p className="eyebrow">Local Telegram</p>
             <h1>Bot Simulator</h1>
           </div>
-          {sim.error ? <span className="status status--error">{sim.error}</span> : <span className="status">{sim.status}</span>}
+          <div className="conversation__status">
+            {sim.callbackNotice ? <span className="status status--notice">{sim.callbackNotice}</span> : null}
+            {sim.error ? <span className="status status--error">{sim.error}</span> : <span className="status">{sim.status}</span>}
+          </div>
         </header>
         <MessageList messages={sim.selectedMessages} onCallback={sim.sendCallback} onReplyText={sim.sendText} />
         <Composer onSend={sim.sendText} />

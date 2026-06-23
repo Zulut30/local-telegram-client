@@ -52,6 +52,12 @@ export interface MessageEventPayload {
   message: Message;
 }
 
+export interface CallbackAnswerEventPayload {
+  callback_query_id: string;
+  text?: string;
+  show_alert?: boolean;
+}
+
 export type TraceStatus = 'open' | 'ok' | 'error';
 
 export interface InboundEvent {
