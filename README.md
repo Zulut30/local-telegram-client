@@ -8,6 +8,35 @@ The simulator includes a Bot API 10.1 compatibility registry generated from the 
 Bot API documentation. Core chat flows are implemented with stateful behavior, while the rest of the
 official methods return deterministic compatibility stubs and still appear in trace output.
 
+## Current Status
+
+Local Telegram Client is currently a developer-preview emulator, not a production-grade Telegram
+clone. It is already useful for local bot development, demos, and regression testing of common chat
+flows, but many Bot API methods are still compatibility stubs rather than full semantic
+implementations.
+
+What works today:
+
+- Local Bot API endpoint compatible with real bot SDKs through `/bot<TOKEN>/<method>`.
+- Stateful polling, webhook delivery, user message injection, callback injection, bot replies,
+  edits, deletes, reply markup, media-like messages, and trace correlation.
+- Russian IDE-style browser UI with chat list, guide panel, console panel, light/dark theme,
+  attachment upload simulation, trace copy, and trace reset.
+- Showcase recipe bot for manual testing of messages, photos, buttons, callback answers, rich
+  messages, typing states, trace errors, polling, and webhook mode.
+- CI, release workflow, Dockerfile, systemd example, Caddy example, and local release-style builds.
+
+Main limitations:
+
+- Bot API coverage is broad but shallow outside the core stateful methods.
+- Uploaded files are represented as URLs or fake file IDs; durable byte storage and
+  `/_sim/file/{id}` are not implemented yet.
+- Persistence flags are reserved; runtime state is in memory by default.
+- Payments, Telegram Stars, Mini Apps, inline mode, business flows, forums, games, passport,
+  gifts, and many admin methods do not yet model Telegram behavior deeply.
+- Remote mode has a basic token guard, but SaaS-grade auth, tenant isolation, quotas, billing, and
+  audit trails are future work.
+
 ## Quickstart
 
 Build the web UI and Go binaries:
@@ -72,13 +101,194 @@ The bundled showcase bot is a small food recipe bot backed by static demo data f
 
 ## Bot API Coverage
 
-- Stateful methods: `getUpdates`, webhook methods, `sendMessage`, `sendPhoto`, `sendRichMessage`,
-  `sendChatAction`, `sendMessageDraft`, `sendRichMessageDraft`, edits, deletes, callback answers,
-  media groups, generic send methods, and custom emoji sticker lookup.
-- UI rendering: message entities, custom/premium emoji placeholders, HTML parse mode, rich-message
-  tables, media chips, live typing status, and streaming draft previews.
-- Compatibility stubs: every official Bot API 10.1 method is recognized case-insensitively; methods
-  that are not stateful yet return a stable success shape for local bot testing.
+The method registry follows the official [Telegram Bot API](https://core.telegram.org/bots/api)
+documentation for Bot API 10.1, released on June 11, 2026.
+
+Coverage levels:
+
+| Level | Meaning | Current examples |
+|---|---|---|
+| Stateful | The method changes simulator state, is visible in UI, and is covered by integration tests. | `getUpdates`, webhook methods, `sendMessage`, `sendPhoto`, `editMessageText`, `editMessageReplyMarkup`, `deleteMessage`, `answerCallbackQuery`, `sendChatAction`, `sendMessageDraft`, `sendRichMessage`, `getCustomEmojiStickers` |
+| UI-rendered | The UI can display the result, but Telegram semantics may still be simplified. | entities, custom/premium emoji placeholders, HTML parse mode, rich-message tables, media chips, live typing status, streaming draft previews |
+| Compatibility stub | The official method name is accepted and returns deterministic success data so local bots keep running. | most admin, business, gifts, stars, games, passport, sticker-management, forum, and inline methods |
+| Not yet semantic | The method is recognized but does not yet emulate Telegram-side validation, state transitions, events, or edge cases. | payments, invoices, Stars, Mini Apps, inline mode, file downloads, business accounts, forum topics, games |
+
+The goal is to move high-value methods from `compatibility stub` to `stateful` in small,
+well-tested slices.
+
+## Roadmap / Goals To SaaS
+
+This README is the canonical public roadmap. The old `PLAN.md` is kept as historical
+implementation context, but the goals below are the source of truth for future work.
+
+### G0: Publish Roadmap Goals
+
+Definition of Done:
+
+- README clearly states current product status, coverage levels, and limitations.
+- Roadmap goals are committed and pushed to `main`.
+- No GitHub Issues, milestones, or project board are created for this docs pass.
+
+Still incomplete until:
+
+- Later implementation goals are split into issues or milestones if project management moves out of
+  README.
+
+### G1: v0.1 Public OSS Release Hardening
+
+Definition of Done:
+
+- Release tag `v0.1.0` builds Linux and macOS archives with `sim`, `showcase-bot`, checksums,
+  README, and license.
+- README quickstart, webhook demo, Docker, systemd, and Caddy docs are verified from a clean clone.
+- `GET /_sim/coverage` exposes method coverage as `stateful`, `ui_rendered`,
+  `compatibility_stub`, or `not_yet_semantic`.
+- `--api-mode=compat|strict` is documented and implemented: compat keeps stable stubs, strict makes
+  unsupported semantic behavior explicit.
+- CI runs Go vet/test, frontend build, Go build, and release-style binary build.
+
+Still incomplete until:
+
+- Browser end-to-end smoke tests run against the built binary.
+- README has a release badge, coverage summary, and a clear versioning policy.
+
+### G2: Bot API Fidelity
+
+Definition of Done:
+
+- Real media/file handling exists: multipart uploads are stored, bot file IDs resolve through
+  `getFile`, and bytes are served through `GET /_sim/file/{id}`.
+- Payments are stateful enough for local testing: `sendInvoice`, shipping queries, pre-checkout
+  queries, successful payment updates, refunds, and failure injection.
+- Telegram Stars and paid media have realistic local fixtures and trace events.
+- Mini Apps and Web App flows support `web_app_data`, `answerWebAppQuery`, init-data fixtures, and
+  button-driven UI testing.
+- Inline mode supports injected inline queries, `answerInlineQuery`, selected results, and visible
+  trace output.
+
+Still incomplete until:
+
+- SDK compatibility is tested with at least Go, Node.js, Python, and PHP bot libraries.
+- High-value Bot API methods have acceptance tests that compare response shape against official
+  examples where practical.
+
+### G3: Testing IDE
+
+Definition of Done:
+
+- Users can record a manual session as a scenario.
+- `POST /_sim/scenarios` saves scenarios with updates, expected bot calls, and optional UI-visible
+  assertions.
+- `POST /_sim/scenarios/{id}/run` replays scenarios deterministically.
+- The browser UI has a scenario runner, API explorer, fixtures panel, and error-injection controls.
+- Assertions can check sent messages, reply markup, callbacks, traces, webhook delivery, and
+  expected failures.
+
+Still incomplete until:
+
+- Scenarios can run headlessly in CI with exported JUnit or JSON reports.
+- Scenario files are stable enough to commit into bot projects.
+
+### G4: Persistence And Session Portability
+
+Definition of Done:
+
+- `--persist` enables SQLite-backed sessions while in-memory mode remains the default.
+- `--media-dir` stores uploaded media bytes separately from the SQLite database.
+- `GET /_sim/export` and `POST /_sim/import` move chats, messages, updates, traces, media metadata,
+  webhooks, and scenarios between machines.
+- Reset supports full reset, trace-only reset, and scenario/session reset.
+
+Still incomplete until:
+
+- Migration tests protect old session files.
+- Large media handling has size limits, cleanup policy, and backup guidance.
+
+### G5: Observability And Debugging
+
+Definition of Done:
+
+- Trace console supports search, filters, status grouping, method grouping, and JSONL export.
+- Structured logs include request IDs, trace IDs, bot token hash, method, latency, and outcome.
+- `/metrics` exposes safe local metrics for request counts, errors, trace counts, webhook delivery,
+  and queue depth.
+- Webhook failures show last error, retry behavior, delivery latency, and pending count in the UI.
+
+Still incomplete until:
+
+- Long traces are easy to inspect without overwhelming the browser.
+- Sensitive values are redacted consistently in UI, logs, exports, and copied trace payloads.
+
+### G6: Self-Hosted Production
+
+Definition of Done:
+
+- `--auth-mode` supports local-only, shared-token, and reverse-proxy header modes.
+- Remote mode has documented CORS behavior, request limits, body-size limits, and safe defaults.
+- Docker image can run with mounted persistence and media directories.
+- systemd and Caddy examples include health checks, restart policy, TLS reverse proxy, and backup
+  notes.
+- Admin docs explain update strategy, data retention, threat model, and disaster recovery.
+
+Still incomplete until:
+
+- A self-hosted smoke test runs the released binary behind the documented reverse proxy.
+- The project has a security policy and vulnerability reporting path.
+
+### G7: SaaS Beta
+
+Definition of Done:
+
+- Hosted workspaces support accounts, teams, projects, per-project bot tokens, and isolated
+  sessions.
+- Tenant isolation protects chats, traces, media, scenarios, exports, and logs.
+- Quotas cover requests, stored media, trace retention, scenario runs, and webhook deliveries.
+- Billing supports a free developer tier and paid team tier.
+- SaaS UI includes project switcher, invite flow, audit log, usage page, and billing page.
+
+Still incomplete until:
+
+- Production monitoring, backups, incident process, abuse prevention, and data deletion flows are
+  operational.
+- Legal pages, privacy policy, and terms match the hosted product behavior.
+
+### G8: v1.0 General Availability
+
+Definition of Done:
+
+- Public compatibility score shows which Bot API methods are stateful, stubbed, or unsupported.
+- Stable public simulator APIs have versioning and migration policy.
+- SDK matrix is green for the most common Telegram bot libraries.
+- Scenario runner is reliable enough for bot CI pipelines.
+- Documentation covers local development, team usage, self-hosting, and SaaS usage.
+
+Still incomplete until:
+
+- Breaking-change policy, deprecation windows, and upgrade guides are in place.
+- Real users have validated the product with non-trivial bots before the `v1.0.0` tag.
+
+## Planned Simulator Interfaces
+
+These interfaces are not all implemented yet; they define the intended public shape for upcoming
+roadmap goals:
+
+```text
+GET  /_sim/coverage                 # Bot API coverage matrix
+GET  /_sim/file/{id}                # stored media bytes
+POST /_sim/scenarios                # save a scenario
+POST /_sim/scenarios/{id}/run       # replay a scenario
+GET  /_sim/export                   # export session data
+POST /_sim/import                   # import session data
+```
+
+Planned flags:
+
+```text
+--api-mode=compat|strict
+--persist=/path/to/session.sqlite
+--media-dir=/path/to/media
+--auth-mode=local|token|proxy-header
+```
 
 Included recipe sources:
 

@@ -1,5 +1,9 @@
 # PLAN.md — Telegram Bot Simulator & DevTools
 
+> Status note: this file is kept as historical implementation context. The current public roadmap
+> and product goals now live in `README.md` under "Roadmap / Goals To SaaS". Some non-goals and
+> milestones below describe the original MVP plan and may no longer match the current codebase.
+
 > Спецификация для агента (Codex). Работай **помилестонно**, сверху вниз. После каждого
 > милестона: `go vet ./...` + `go test ./...` должны проходить, затем коммит. Не переходи
 > к следующему милестону, пока acceptance-критерии текущего не выполнены. Не добавляй
