@@ -71,6 +71,9 @@ func TestRecipeCallbackSendsPhoto(t *testing.T) {
 	if len(client.answered) != 1 {
 		t.Fatalf("answered = %d, want 1", len(client.answered))
 	}
+	if len(client.actions) != 1 || client.actions[0].Action != telego.ChatActionUploadPhoto {
+		t.Fatalf("actions = %#v, want upload_photo chat action", client.actions)
+	}
 	if len(client.photos) != 1 {
 		t.Fatalf("photos = %d, want 1", len(client.photos))
 	}
@@ -193,6 +196,7 @@ func TestHandleCallbacks(t *testing.T) {
 type fakeClient struct {
 	sent           []*telego.SendMessageParams
 	photos         []*telego.SendPhotoParams
+	actions        []*telego.SendChatActionParams
 	answered       []*telego.AnswerCallbackQueryParams
 	edited         []*telego.EditMessageTextParams
 	deleted        []*telego.DeleteMessageParams
@@ -208,6 +212,11 @@ func (f *fakeClient) SendMessage(params *telego.SendMessageParams) (*telego.Mess
 		Chat:      telego.Chat{ID: params.ChatID.ID, Type: "private"},
 		Text:      params.Text,
 	}, nil
+}
+
+func (f *fakeClient) SendChatAction(params *telego.SendChatActionParams) error {
+	f.actions = append(f.actions, params)
+	return nil
 }
 
 func (f *fakeClient) SendPhoto(params *telego.SendPhotoParams) (*telego.Message, error) {

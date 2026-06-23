@@ -94,6 +94,8 @@ func (h *Handler) dispatch(w http.ResponseWriter, r *http.Request, method string
 		h.handleSendMessage(w, r, params)
 	case "sendPhoto":
 		h.handleSendPhoto(w, r, params)
+	case "sendChatAction":
+		h.handleSendChatAction(w, params)
 	case "editMessageText":
 		h.handleEditMessageText(w, r, params)
 	case "editMessageReplyMarkup":
@@ -298,6 +300,20 @@ func (h *Handler) handleSendMessage(w http.ResponseWriter, r *http.Request, para
 	writeOK(w, msg)
 }
 
+func (h *Handler) handleSendChatAction(w http.ResponseWriter, params parameters) {
+	chatID, err := params.Int64("chat_id", 0)
+	if err != nil || chatID == 0 {
+		writeError(w, http.StatusBadRequest, 400, "chat_id is required")
+		return
+	}
+	action, _ := params.String("action", "")
+	if !validChatAction(action) {
+		writeError(w, http.StatusBadRequest, 400, "action is invalid")
+		return
+	}
+	writeOK(w, true)
+}
+
 func (h *Handler) handleSendPhoto(w http.ResponseWriter, r *http.Request, params parameters) {
 	chatID, err := params.Int64("chat_id", 0)
 	if err != nil || chatID == 0 {
@@ -335,6 +351,25 @@ func (h *Handler) handleSendPhoto(w http.ResponseWriter, r *http.Request, params
 	}
 	h.broadcastMessage("created", msg)
 	writeOK(w, msg)
+}
+
+func validChatAction(action string) bool {
+	switch action {
+	case "typing",
+		"upload_photo",
+		"record_video",
+		"upload_video",
+		"record_voice",
+		"upload_voice",
+		"upload_document",
+		"choose_sticker",
+		"find_location",
+		"record_video_note",
+		"upload_video_note":
+		return true
+	default:
+		return false
+	}
 }
 
 func (h *Handler) handleEditMessageText(w http.ResponseWriter, r *http.Request, params parameters) {

@@ -37,7 +37,8 @@ toast, temporary delete, reply keyboard, and trace error scenarios.
 
 The browser UI works like a small IDE: use the top bar to hide/show Chats, Guide, and Console,
 switch Light/Dark theme, and use the attachment button in the composer to send a photo update
-with an optional caption.
+with an optional caption. The Console header has a `Copy logs` button that copies the current
+trace history as formatted JSON.
 
 ## Webhook Demo
 
@@ -60,6 +61,7 @@ The bundled showcase bot is a small food recipe bot backed by static demo data f
 
 - `sendMessage` for menus, ingredients, steps, echo, and photo acknowledgements.
 - `sendPhoto` for recipe cards with remote image URLs.
+- `sendChatAction` for realistic bot activity states such as `upload_photo`.
 - `answerCallbackQuery`, `editMessageText`, `deleteMessage`, reply keyboards, polling, webhook, and trace errors.
 - User photo injection through the UI attachment button.
 

@@ -223,6 +223,30 @@ func TestBotAPIMessageMutationsAndCallbackAnswerEvents(t *testing.T) {
 	}
 }
 
+func TestBotAPISendChatActionValidation(t *testing.T) {
+	st := store.NewMemory()
+	cfg := config.Config{Mode: config.ModeLocal, BotToken: "1234567890:aaaabbbbaaaabbbbaaaabbbbaaaabbbbccc", BufferSize: 100}
+	handler := NewWithStore(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), st)
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+
+	validEnv := botCall(t, srv.URL, cfg.BotToken, "sendChatAction", map[string]any{
+		"chat_id": 42,
+		"action":  telego.ChatActionUploadPhoto,
+	}, http.StatusOK)
+	if ok := decodeBotResult[bool](t, validEnv); !ok {
+		t.Fatal("sendChatAction result = false, want true")
+	}
+
+	invalidEnv := botCall(t, srv.URL, cfg.BotToken, "sendChatAction", map[string]any{
+		"chat_id": 42,
+		"action":  "cook_dinner",
+	}, http.StatusBadRequest)
+	if invalidEnv.OK || invalidEnv.ErrorCode != 400 || invalidEnv.Description != "action is invalid" {
+		t.Fatalf("invalid sendChatAction response = %#v, want action validation error", invalidEnv)
+	}
+}
+
 func TestSimResetClearsStateAndTraces(t *testing.T) {
 	st := store.NewMemory()
 	cfg := config.Config{Mode: config.ModeLocal, BotToken: "1234567890:aaaabbbbaaaabbbbaaaabbbbaaaabbbbccc", BufferSize: 100}

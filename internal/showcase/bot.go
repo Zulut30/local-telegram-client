@@ -36,6 +36,7 @@ const (
 type TelegramClient interface {
 	SendMessage(params *telego.SendMessageParams) (*telego.Message, error)
 	SendPhoto(params *telego.SendPhotoParams) (*telego.Message, error)
+	SendChatAction(params *telego.SendChatActionParams) error
 	AnswerCallbackQuery(params *telego.AnswerCallbackQueryParams) error
 	EditMessageText(params *telego.EditMessageTextParams) (*telego.Message, error)
 	DeleteMessage(params *telego.DeleteMessageParams) error
@@ -397,6 +398,12 @@ func (b *Bot) sendRecipeList(chatID int64) error {
 }
 
 func (b *Bot) sendRecipePhoto(chatID int64, item recipe) error {
+	if err := b.client.SendChatAction(&telego.SendChatActionParams{
+		ChatID: telego.ChatID{ID: chatID},
+		Action: telego.ChatActionUploadPhoto,
+	}); err != nil {
+		return err
+	}
 	_, err := b.client.SendPhoto(&telego.SendPhotoParams{
 		ChatID: telego.ChatID{ID: chatID},
 		Photo:  telego.InputFile{URL: item.PhotoURL},

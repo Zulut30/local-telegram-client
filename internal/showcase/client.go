@@ -78,6 +78,10 @@ func (c *APIClient) SendPhoto(params *telego.SendPhotoParams) (*telego.Message, 
 	return &message, nil
 }
 
+func (c *APIClient) SendChatAction(params *telego.SendChatActionParams) error {
+	return c.call("sendChatAction", params, nil)
+}
+
 func (c *APIClient) AnswerCallbackQuery(params *telego.AnswerCallbackQueryParams) error {
 	return c.call("answerCallbackQuery", params, nil)
 }

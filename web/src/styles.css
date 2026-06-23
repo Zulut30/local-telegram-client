@@ -715,7 +715,14 @@ h2 {
   line-height: 1.35;
 }
 
-.trace-panel__header span {
+.trace-panel__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.trace-panel__actions span {
   display: grid;
   place-items: center;
   min-width: 32px;
@@ -724,6 +731,22 @@ h2 {
   background: #263b4c;
   color: #ffffff;
   font-weight: 700;
+}
+
+.trace-panel__copy {
+  min-height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-raised);
+  color: var(--telegram-blue-dark);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 0 10px;
+}
+
+.trace-panel__copy:hover {
+  border-color: #8bcff0;
+  background: rgba(42, 171, 238, 0.12);
 }
 
 .trace-panel__body {

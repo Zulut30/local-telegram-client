@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react';
 import type { OutboundCall, Trace } from '../types';
 
 interface TracePanelProps {
@@ -36,8 +37,54 @@ function ParamsPreview({ params }: { params?: Record<string, unknown> }) {
   return <pre className="trace-call__params">{JSON.stringify(params, null, 2)}</pre>;
 }
 
+function traceLogPayload(traces: Trace[]): string {
+  return JSON.stringify(
+    {
+      copied_at: new Date().toISOString(),
+      trace_count: traces.length,
+      traces,
+    },
+    null,
+    2,
+  );
+}
+
+async function copyText(text: string): Promise<void> {
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const area = document.createElement('textarea');
+  area.value = text;
+  area.setAttribute('readonly', 'true');
+  area.style.position = 'fixed';
+  area.style.left = '-9999px';
+  document.body.appendChild(area);
+  area.select();
+  const copied = document.execCommand('copy');
+  document.body.removeChild(area);
+  if (!copied) {
+    throw new Error('copy command failed');
+  }
+}
+
 export function TracePanel({ traces }: TracePanelProps) {
   const ordered = [...traces].reverse();
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copying' | 'copied' | 'failed'>('idle');
+  const logPayload = useMemo(() => traceLogPayload(ordered), [ordered]);
+
+  async function copyLogs() {
+    setCopyStatus('copying');
+    try {
+      await copyText(logPayload);
+      setCopyStatus('copied');
+      window.setTimeout(() => setCopyStatus('idle'), 1800);
+    } catch {
+      setCopyStatus('failed');
+      window.setTimeout(() => setCopyStatus('idle'), 2400);
+    }
+  }
 
   return (
     <aside className="trace-panel" aria-label="Trace stream">
@@ -47,7 +94,18 @@ export function TracePanel({ traces }: TracePanelProps) {
           <h2>Console</h2>
           <p>Each card connects one user update to the Bot API calls made in response.</p>
         </div>
-        <span>{ordered.length}</span>
+        <div className="trace-panel__actions">
+          <span>{ordered.length}</span>
+          <button className="trace-panel__copy" type="button" onClick={copyLogs}>
+            {copyStatus === 'copying'
+              ? 'Copying...'
+              : copyStatus === 'copied'
+                ? 'Copied'
+                : copyStatus === 'failed'
+                  ? 'Failed'
+                  : 'Copy logs'}
+          </button>
+        </div>
       </header>
       <div className="trace-panel__body">
         <div className="trace-panel__legend" aria-label="Trace legend">

@@ -48,6 +48,17 @@ export function useSimState() {
     }
   }, []);
 
+  const refreshLater = useCallback(
+    (delayMs = 500) => {
+      window.setTimeout(() => {
+        refresh().catch((err: unknown) => {
+          setError(errorMessage(err, 'Failed to refresh state'));
+        });
+      }, delayMs);
+    },
+    [refresh],
+  );
+
   useEffect(() => {
     const controller = new AbortController();
     refresh(controller.signal).catch((err: unknown) => {
@@ -109,11 +120,12 @@ export function useSimState() {
       try {
         await injectText(selectedChatID, text);
         await refresh();
+        refreshLater();
       } catch (err) {
         setError(errorMessage(err, 'Failed to send message'));
       }
     },
-    [refresh, selectedChatID],
+    [refresh, refreshLater, selectedChatID],
   );
 
   const sendPhoto = useCallback(
@@ -122,11 +134,12 @@ export function useSimState() {
       try {
         await injectPhoto(selectedChatID, photoURL, caption);
         await refresh();
+        refreshLater();
       } catch (err) {
         setError(errorMessage(err, 'Failed to send photo'));
       }
     },
-    [refresh, selectedChatID],
+    [refresh, refreshLater, selectedChatID],
   );
 
   const sendCallback = useCallback(
@@ -135,11 +148,12 @@ export function useSimState() {
       try {
         await injectCallback(message, data);
         await refresh();
+        refreshLater();
       } catch (err) {
         setError(errorMessage(err, 'Failed to send callback'));
       }
     },
-    [refresh],
+    [refresh, refreshLater],
   );
 
   const reset = useCallback(async () => {
