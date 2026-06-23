@@ -398,30 +398,50 @@ h2 {
 
 .keyboard {
   display: grid;
-  gap: 6px;
-  margin-top: 10px;
+  gap: 4px;
+  margin: 10px -2px -2px;
 }
 
 .keyboard__row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: repeat(var(--keyboard-columns, 1), minmax(0, 1fr));
+  gap: 4px;
 }
 
 .keyboard__button {
-  min-height: 34px;
-  border: 1px solid #99bfd4;
-  border-radius: 8px;
-  background: #e8f5fb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-width: 0;
+  min-height: 38px;
+  border: 1px solid #91bdd3;
+  border-radius: 7px;
+  background: #e9f6fc;
   color: #174b67;
-  padding: 7px 10px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  padding: 8px 10px;
   text-decoration: none;
+  text-align: center;
+}
+
+.keyboard__button:hover {
+  background: #dff0f8;
+  border-color: #74abc8;
 }
 
 .keyboard__button--reply {
   border-color: #d1ba72;
   background: #fff7dc;
   color: #6b5510;
+}
+
+.keyboard__button--reply:hover {
+  background: #ffefb8;
+  border-color: #b9983f;
 }
 
 .composer {
