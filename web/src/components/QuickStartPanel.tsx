@@ -7,24 +7,24 @@ interface QuickStartPanelProps {
 }
 
 const quickActions = [
-  { label: 'Send /start', text: '/start' },
-  { label: 'Ping', text: 'Ping' },
-  { label: 'Trace error', text: 'Trace error' },
+  { label: 'Отправить /start', text: '/start' },
+  { label: 'Пинг', text: 'Пинг' },
+  { label: 'Ошибка trace', text: 'Ошибка trace' },
 ];
 
 export function QuickStartPanel({ hasMessages, traceCount, resetting, onSend, onReset }: QuickStartPanelProps) {
   return (
-    <section className="quick-start" aria-label="Quick start">
+    <section className="quick-start" aria-label="Быстрый старт">
       <div className="quick-start__main">
-        <p className="eyebrow">Demo controls</p>
-        <h2>Try the bot tools</h2>
+        <p className="eyebrow">Демо-панель</p>
+        <h2>Проверьте инструменты бота</h2>
         <p>
-          Send a user update here. Bot replies stay in the chat, and Bot API calls appear in Traces.
+          Отправьте update от пользователя. Ответы бота останутся в чате, а Bot API вызовы появятся в консоли.
         </p>
       </div>
-      <div className="quick-start__steps" aria-label="Demo steps">
-        <span><b>1</b> Message</span>
-        <span><b>2</b> Buttons</span>
+      <div className="quick-start__steps" aria-label="Шаги демо">
+        <span><b>1</b> Сообщение</span>
+        <span><b>2</b> Кнопки</span>
         <span><b>3</b> Trace</span>
       </div>
       <div className="quick-start__actions">
@@ -34,12 +34,12 @@ export function QuickStartPanel({ hasMessages, traceCount, resetting, onSend, on
           </button>
         ))}
         <button className="quick-start__reset" type="button" disabled={resetting} onClick={() => void onReset()}>
-          {resetting ? 'Resetting...' : 'Reset session'}
+          {resetting ? 'Сбрасываю...' : 'Сбросить сессию'}
         </button>
       </div>
       <div className="quick-start__stats">
-        <span>{hasMessages ? 'Chat has messages' : 'Chat is empty'}</span>
-        <span>{traceCount} traces</span>
+        <span>{hasMessages ? 'В чате есть сообщения' : 'Чат пуст'}</span>
+        <span>{traceCount} trace</span>
       </div>
     </section>
   );

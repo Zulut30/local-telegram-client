@@ -717,6 +717,7 @@ h2 {
 
 .trace-panel__actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
@@ -733,7 +734,8 @@ h2 {
   font-weight: 700;
 }
 
-.trace-panel__copy {
+.trace-panel__copy,
+.trace-panel__clear {
   min-height: 32px;
   border: 1px solid var(--line);
   border-radius: 7px;
@@ -744,9 +746,15 @@ h2 {
   padding: 0 10px;
 }
 
-.trace-panel__copy:hover {
+.trace-panel__copy:hover,
+.trace-panel__clear:hover {
   border-color: #8bcff0;
   background: rgba(42, 171, 238, 0.12);
+}
+
+.trace-panel__clear:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
 }
 
 .trace-panel__body {

@@ -11,6 +11,7 @@ export function App() {
   const sim = useSimState();
   const traceState = useTraceState();
   const [resetting, setResetting] = useState(false);
+  const [clearingTraces, setClearingTraces] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [showChats, setShowChats] = useState(true);
   const [showControls, setShowControls] = useState(true);
@@ -29,6 +30,19 @@ export function App() {
     }
   }
 
+  async function clearConsole() {
+    if (clearingTraces) {
+      return;
+    }
+    setClearingTraces(true);
+    try {
+      await traceState.clear();
+    } finally {
+      setClearingTraces(false);
+    }
+  }
+
+  const statusLabel = sim.status === 'live' ? 'онлайн' : sim.status === 'offline' ? 'офлайн' : 'подключение';
   const workspaceClass = [
     'workspace',
     showChats ? '' : 'workspace--no-chats',
@@ -40,23 +54,23 @@ export function App() {
 
   return (
     <main className="shell" data-theme={theme}>
-      <header className="ide-toolbar" aria-label="Workspace controls">
+      <header className="ide-toolbar" aria-label="Панель рабочей области">
         <div className="ide-toolbar__brand">
           <strong>Local Telegram IDE</strong>
-          <span>Bot simulator workspace</span>
+          <span>Рабочее место для тестирования ботов</span>
         </div>
         <div className="ide-toolbar__actions">
           <button className={showChats ? 'is-active' : ''} type="button" onClick={() => setShowChats((value) => !value)}>
-            Chats
+            Чаты
           </button>
           <button className={showControls ? 'is-active' : ''} type="button" onClick={() => setShowControls((value) => !value)}>
-            Guide
+            Гайд
           </button>
           <button className={showConsole ? 'is-active' : ''} type="button" onClick={() => setShowConsole((value) => !value)}>
-            Console
+            Консоль
           </button>
           <button type="button" onClick={() => setTheme((value) => (value === 'light' ? 'dark' : 'light'))}>
-            {theme === 'light' ? 'Dark' : 'Light'}
+            {theme === 'light' ? 'Темная' : 'Светлая'}
           </button>
         </div>
       </header>
@@ -69,16 +83,16 @@ export function App() {
             onSelect={sim.setSelectedChatID}
           />
         ) : null}
-        <section className={conversationClass} aria-label="Chat">
+        <section className={conversationClass} aria-label="Чат">
           <header className="conversation__header">
             <div>
               <p className="eyebrow">Local Telegram</p>
-              <h1>Recipe Bot Simulator</h1>
-              <p className="conversation__subtitle">Developer chat with a food recipe showcase bot</p>
+              <h1>Эмулятор бота-рецептов</h1>
+              <p className="conversation__subtitle">Чат разработчика с витринным ботом для проверки Telegram Bot API</p>
             </div>
             <div className="conversation__status">
               {sim.callbackNotice ? <span className="status status--notice">{sim.callbackNotice}</span> : null}
-              {sim.error ? <span className="status status--error">{sim.error}</span> : <span className="status">{sim.status}</span>}
+              {sim.error ? <span className="status status--error">{sim.error}</span> : <span className="status">{statusLabel}</span>}
             </div>
           </header>
           {showControls ? (
@@ -93,7 +107,7 @@ export function App() {
           <MessageList messages={sim.selectedMessages} onCallback={sim.sendCallback} onReplyText={sim.sendText} />
           <Composer onSend={sim.sendText} onPhoto={sim.sendPhoto} />
         </section>
-        {showConsole ? <TracePanel traces={traceState.traces} /> : null}
+        {showConsole ? <TracePanel traces={traceState.traces} clearing={clearingTraces} onClear={clearConsole} /> : null}
       </div>
     </main>
   );

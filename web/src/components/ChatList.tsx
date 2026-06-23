@@ -8,21 +8,36 @@ interface ChatListProps {
 }
 
 function chatTitle(chat: Chat): string {
-  return chat.first_name || chat.username || `Chat ${chat.id}`;
+  return chat.first_name || chat.username || `Чат ${chat.id}`;
+}
+
+function statusLabel(status: ChatListProps['status']): string {
+  switch (status) {
+    case 'live':
+      return 'онлайн';
+    case 'offline':
+      return 'офлайн';
+    default:
+      return 'подключение';
+  }
+}
+
+function chatTypeLabel(type: string): string {
+  return type === 'private' ? 'личный чат' : type;
 }
 
 export function ChatList({ chats, selectedChatID, status, onSelect }: ChatListProps) {
   return (
-    <aside className="chat-list" aria-label="Chats">
+    <aside className="chat-list" aria-label="Чаты">
       <div className="chat-list__brand">
         <span>
           <strong>Local Telegram</strong>
-          <small>Simulated chats</small>
+          <small>Тестовые чаты</small>
         </span>
-        <span className="chat-list__state" data-state={status}>{status}</span>
+        <span className="chat-list__state" data-state={status}>{statusLabel(status)}</span>
       </div>
       <div className="chat-list__hint">
-        Select the user session you want to test.
+        Выберите сессию пользователя, которую хотите проверить.
       </div>
       <nav className="chat-list__items">
         {chats.map((chat) => (
@@ -35,7 +50,7 @@ export function ChatList({ chats, selectedChatID, status, onSelect }: ChatListPr
             <span className="chat-list__avatar">{chatTitle(chat).slice(0, 1).toUpperCase()}</span>
             <span>
               <strong>{chatTitle(chat)}</strong>
-              <small>{chat.type}</small>
+              <small>{chatTypeLabel(chat.type)}</small>
             </span>
           </button>
         ))}

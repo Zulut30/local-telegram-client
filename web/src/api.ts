@@ -3,7 +3,7 @@ import type { Message, SimResponse, SimState, Trace } from './types';
 async function readResponse<T>(response: Response): Promise<T> {
   const payload = (await response.json()) as SimResponse<T>;
   if (!response.ok || !payload.ok || payload.result === undefined) {
-    throw new Error(payload.description ?? `Request failed with ${response.status}`);
+    throw new Error(payload.description ?? `Запрос завершился ошибкой ${response.status}`);
   }
   return payload.result;
 }
@@ -20,6 +20,15 @@ export async function loadTraces(signal?: AbortSignal): Promise<Trace[]> {
 
 export async function resetSession(): Promise<void> {
   const response = await fetch('/_sim/reset', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+  });
+  await readResponse<boolean>(response);
+}
+
+export async function clearTraces(): Promise<void> {
+  const response = await fetch('/_sim/traces/reset', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: '{}',

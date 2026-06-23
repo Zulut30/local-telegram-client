@@ -31,14 +31,14 @@ In a second terminal, start the showcase bot:
 ./bin/showcase-bot --mode polling
 ```
 
-Send `/start` in the browser chat. The showcase bot opens a recipe catalog with photo cards,
-ingredients, steps, source links, reply keyboard controls, and a `Dev tools` section for edit,
-toast, temporary delete, reply keyboard, and trace error scenarios.
+Send `/start` in the browser chat. The Russian showcase bot opens a recipe catalog with photo
+cards, ingredients, steps, source links, reply keyboard controls, and an `Инструменты` section for
+edit, toast, temporary delete, reply keyboard, and trace error scenarios.
 
-The browser UI works like a small IDE: use the top bar to hide/show Chats, Guide, and Console,
-switch Light/Dark theme, and use the attachment button in the composer to send a photo update
-with an optional caption. The Console header has a `Copy logs` button that copies the current
-trace history as formatted JSON.
+The browser UI works like a small Russian-localized IDE: use the top bar to hide/show `Чаты`,
+`Гайд`, and `Консоль`, switch light/dark theme, and use the attachment button in the composer to
+send a photo update with an optional caption. The Console header can copy the current trace history
+as formatted JSON or clear only the trace history while keeping the chat state.
 
 ## Webhook Demo
 

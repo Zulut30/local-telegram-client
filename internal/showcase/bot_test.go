@@ -19,7 +19,7 @@ func TestHandleStartSendsInlineKeyboard(t *testing.T) {
 		t.Fatalf("sent messages = %d, want 1", len(client.sent))
 	}
 	msg := client.sent[0]
-	if !strings.Contains(msg.Text, "Recipe bot is ready") {
+	if !strings.Contains(msg.Text, "Бот-рецептов готов") {
 		t.Fatalf("start text = %q, want recipe intro", msg.Text)
 	}
 	markup, ok := msg.ReplyMarkup.(*telego.InlineKeyboardMarkup)
@@ -42,15 +42,15 @@ func TestHandleTextEchoAndReplyCommands(t *testing.T) {
 	if err := bot.Handle(messageUpdate(42, "hello")); err != nil {
 		t.Fatalf("echo returned error: %v", err)
 	}
-	if got := client.sent[0].Text; got != "Echo: hello" {
+	if got := client.sent[0].Text; got != "Эхо: hello" {
 		t.Fatalf("echo text = %q", got)
 	}
 
 	if err := bot.Handle(messageUpdate(42, ReplyPing)); err != nil {
 		t.Fatalf("ping returned error: %v", err)
 	}
-	if !strings.Contains(client.sent[1].Text, "Pong") {
-		t.Fatalf("ping text = %q, want Pong", client.sent[1].Text)
+	if !strings.Contains(client.sent[1].Text, "Понг") {
+		t.Fatalf("ping text = %q, want Понг", client.sent[1].Text)
 	}
 
 	if err := bot.Handle(messageUpdate(42, ReplyTraceError)); err != nil {
@@ -81,7 +81,7 @@ func TestRecipeCallbackSendsPhoto(t *testing.T) {
 	if photo.Photo.URL == "" {
 		t.Fatalf("photo URL is empty")
 	}
-	if !strings.Contains(photo.Caption, "Spicy Arrabiata Penne") {
+	if !strings.Contains(photo.Caption, "Пенне arrabbiata") {
 		t.Fatalf("photo caption = %q, want recipe name", photo.Caption)
 	}
 	if _, ok := photo.ReplyMarkup.(*telego.InlineKeyboardMarkup); !ok {
@@ -99,7 +99,7 @@ func TestPhotoMessageSuggestsRecipes(t *testing.T) {
 	if len(client.sent) != 1 {
 		t.Fatalf("sent messages = %d, want 1", len(client.sent))
 	}
-	if !strings.Contains(client.sent[0].Text, "received it as a Telegram photo update") {
+	if !strings.Contains(client.sent[0].Text, "Telegram photo update") {
 		t.Fatalf("photo response = %q, want photo acknowledgement", client.sent[0].Text)
 	}
 	if _, ok := client.sent[0].ReplyMarkup.(*telego.InlineKeyboardMarkup); !ok {
@@ -167,7 +167,7 @@ func TestHandleCallbacks(t *testing.T) {
 				if !client.traceTriggered {
 					t.Fatal("trace error trigger was not called")
 				}
-				if len(client.sent) != 1 || !strings.Contains(client.sent[0].Text, "invalid Bot API call") {
+				if len(client.sent) != 1 || !strings.Contains(client.sent[0].Text, "неправильный Bot API вызов") {
 					t.Fatalf("sent = %#v, want explanatory message", client.sent)
 				}
 			},

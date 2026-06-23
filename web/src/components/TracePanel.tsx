@@ -3,20 +3,23 @@ import type { OutboundCall, Trace } from '../types';
 
 interface TracePanelProps {
   traces: Trace[];
+  clearing: boolean;
+  onClear: () => Promise<void>;
 }
 
 function traceTitle(trace: Trace): string {
   if (trace.inbound) {
-    return `${trace.inbound.type} #${trace.inbound.update_id}`;
+    const inboundType = trace.inbound.type === 'message' ? 'сообщение' : trace.inbound.type;
+    return `${inboundType} #${trace.inbound.update_id}`;
   }
-  return trace.orphan ? 'orphan call' : trace.id;
+  return trace.orphan ? 'вызов без update' : trace.id;
 }
 
 function traceSubtitle(trace: Trace): string {
   if (trace.inbound) {
-    return `chat ${trace.inbound.chat_id}${trace.inbound.text ? ` - ${trace.inbound.text}` : ''}`;
+    return `чат ${trace.inbound.chat_id}${trace.inbound.text ? ` - ${trace.inbound.text}` : ''}`;
   }
-  return (trace.calls ?? [])[0]?.method ?? 'no calls';
+  return (trace.calls ?? [])[0]?.method ?? 'нет вызовов';
 }
 
 function statusClass(status: string): string {
@@ -27,7 +30,18 @@ function callSummary(call: OutboundCall): string {
   if (call.ok) {
     return `${call.http_status} - ${call.latency_ms}ms`;
   }
-  return `${call.http_status} - ${call.error_desc ?? 'error'}`;
+  return `${call.http_status} - ${call.error_desc ?? 'ошибка'}`;
+}
+
+function statusLabel(status: Trace['status']): string {
+  switch (status) {
+    case 'open':
+      return 'в работе';
+    case 'error':
+      return 'ошибка';
+    default:
+      return 'успешно';
+  }
 }
 
 function ParamsPreview({ params }: { params?: Record<string, unknown> }) {
@@ -65,11 +79,11 @@ async function copyText(text: string): Promise<void> {
   const copied = document.execCommand('copy');
   document.body.removeChild(area);
   if (!copied) {
-    throw new Error('copy command failed');
+    throw new Error('Не удалось скопировать текст');
   }
 }
 
-export function TracePanel({ traces }: TracePanelProps) {
+export function TracePanel({ traces, clearing, onClear }: TracePanelProps) {
   const ordered = [...traces].reverse();
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copying' | 'copied' | 'failed'>('idle');
   const logPayload = useMemo(() => traceLogPayload(ordered), [ordered]);
@@ -87,36 +101,39 @@ export function TracePanel({ traces }: TracePanelProps) {
   }
 
   return (
-    <aside className="trace-panel" aria-label="Trace stream">
+    <aside className="trace-panel" aria-label="Поток trace-событий">
       <header className="trace-panel__header">
         <div>
-          <p className="eyebrow">Bot API console</p>
-          <h2>Console</h2>
-          <p>Each card connects one user update to the Bot API calls made in response.</p>
+          <p className="eyebrow">Консоль Bot API</p>
+          <h2>Консоль</h2>
+          <p>Каждая карточка связывает user update с Bot API вызовами, которые сделал бот.</p>
         </div>
         <div className="trace-panel__actions">
           <span>{ordered.length}</span>
           <button className="trace-panel__copy" type="button" onClick={copyLogs}>
             {copyStatus === 'copying'
-              ? 'Copying...'
+              ? 'Копирую...'
               : copyStatus === 'copied'
-                ? 'Copied'
+                ? 'Скопировано'
                 : copyStatus === 'failed'
-                  ? 'Failed'
-                  : 'Copy logs'}
+                  ? 'Ошибка'
+                  : 'Копировать логи'}
+          </button>
+          <button className="trace-panel__clear" type="button" disabled={clearing || ordered.length === 0} onClick={() => void onClear()}>
+            {clearing ? 'Очистка...' : 'Очистить'}
           </button>
         </div>
       </header>
       <div className="trace-panel__body">
-        <div className="trace-panel__legend" aria-label="Trace legend">
-          <span>open = bot is handling</span>
-          <span>ok = request succeeded</span>
-          <span>error = inspect params</span>
+        <div className="trace-panel__legend" aria-label="Легенда trace">
+          <span>в работе = бот обрабатывает update</span>
+          <span>успешно = запрос выполнен</span>
+          <span>ошибка = проверьте параметры</span>
         </div>
         {ordered.length === 0 ? (
           <div className="empty empty--compact">
-            <strong>No traces yet</strong>
-            <span>Send /start in the chat. Bot calls will appear here.</span>
+            <strong>Trace пока пустой</strong>
+            <span>Отправьте /start в чат. Вызовы бота появятся здесь.</span>
           </div>
         ) : null}
         {ordered.map((trace, index) => (
@@ -126,14 +143,14 @@ export function TracePanel({ traces }: TracePanelProps) {
                 <strong>{traceTitle(trace)}</strong>
                 <small>{traceSubtitle(trace)}</small>
               </span>
-              <span className={statusClass(trace.status)}>{trace.status}</span>
+              <span className={statusClass(trace.status)}>{statusLabel(trace.status)}</span>
             </summary>
             <div className="trace-card__body">
               <div className="trace-card__meta">
                 <span>{trace.correlation}</span>
-                {trace.orphan ? <span>orphan</span> : null}
+                {trace.orphan ? <span>без update</span> : null}
               </div>
-              {(trace.calls ?? []).length === 0 ? <p className="trace-card__empty">Waiting for bot calls</p> : null}
+              {(trace.calls ?? []).length === 0 ? <p className="trace-card__empty">Ждем вызовы бота</p> : null}
               {(trace.calls ?? []).map((call, index) => (
                 <div className={call.ok ? 'trace-call' : 'trace-call trace-call--error'} key={`${trace.id}-${call.method}-${index}`}>
                   <div className="trace-call__top">
@@ -142,7 +159,7 @@ export function TracePanel({ traces }: TracePanelProps) {
                   </div>
                   <div className="trace-card__meta">
                     <span>{call.correlation}</span>
-                    {!call.ok && call.error_code ? <span>error {call.error_code}</span> : null}
+                    {!call.ok && call.error_code ? <span>ошибка {call.error_code}</span> : null}
                   </div>
                   <ParamsPreview params={call.params} />
                 </div>

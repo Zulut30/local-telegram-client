@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { loadTraces } from './api';
+import { clearTraces, loadTraces } from './api';
 import type { Trace, TraceEventPayload } from './types';
 
 const maxTraces = 1000;
@@ -17,6 +17,11 @@ export function useTraceState() {
     setTraces(snapshot.slice(-maxTraces));
   }, []);
 
+  const clear = useCallback(async () => {
+    await clearTraces();
+    setTraces([]);
+  }, []);
+
   useEffect(() => {
     const controller = new AbortController();
     refresh(controller.signal).catch(() => undefined);
@@ -32,5 +37,5 @@ export function useTraceState() {
     return () => source.close();
   }, []);
 
-  return { traces, refresh };
+  return { traces, refresh, clear };
 }

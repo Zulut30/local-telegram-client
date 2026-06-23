@@ -10,7 +10,7 @@ function readAsDataURL(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.addEventListener('load', () => resolve(String(reader.result ?? '')));
-    reader.addEventListener('error', () => reject(reader.error ?? new Error('Failed to read file')));
+    reader.addEventListener('error', () => reject(reader.error ?? new Error('Не удалось прочитать файл')));
     reader.readAsDataURL(file);
   });
 }
@@ -59,30 +59,30 @@ export function Composer({ onSend, onPhoto }: ComposerProps) {
         type="file"
         accept="image/*"
         onChange={attachPhoto}
-        aria-label="Attach photo file"
+        aria-label="Прикрепить фото"
       />
       <button
         className="composer__attach"
         type="button"
-        title="Attach photo"
-        aria-label="Attach photo"
+        title="Прикрепить фото"
+        aria-label="Прикрепить фото"
         disabled={sending}
         onClick={() => fileInputRef.current?.click()}
       >
         📎
       </button>
       <label className="sr-only" htmlFor="message-text">
-        Message
+        Сообщение
       </label>
       <input
         id="message-text"
         value={text}
         onChange={(event) => setText(event.target.value)}
-        placeholder="Message or photo caption"
+        placeholder="Сообщение или подпись к фото"
         autoComplete="off"
       />
       <button type="submit" disabled={sending || text.trim() === ''}>
-        Send
+        Отправить
       </button>
     </form>
   );

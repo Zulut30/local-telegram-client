@@ -12,12 +12,12 @@ import (
 )
 
 const (
-	ReplyPing         = "Ping"
-	ReplyButtons      = "Buttons"
-	ReplyRecipes      = "Recipes"
-	ReplyRandomRecipe = "Random recipe"
-	ReplyDevTools     = "Dev tools"
-	ReplyTraceError   = "Trace error"
+	ReplyPing         = "Пинг"
+	ReplyButtons      = "Кнопки"
+	ReplyRecipes      = "Рецепты"
+	ReplyRandomRecipe = "Случайный рецепт"
+	ReplyDevTools     = "Инструменты"
+	ReplyTraceError   = "Ошибка trace"
 
 	CallbackRecipeList   = "recipe:list"
 	CallbackRecipeRandom = "recipe:random"
@@ -66,90 +66,90 @@ type recipe struct {
 var recipeCatalog = []recipe{
 	{
 		ID:         "arrabiata",
-		Name:       "Spicy Arrabiata Penne",
-		Area:       "Italian",
-		Category:   "Vegetarian",
-		Time:       "25 min",
-		Difficulty: "Easy",
+		Name:       "Пенне arrabbiata",
+		Area:       "Италия",
+		Category:   "Вегетарианское",
+		Time:       "25 мин",
+		Difficulty: "легко",
 		PhotoURL:   "https://www.themealdb.com/images/media/meals/ustsqw1468250014.jpg",
 		SourceURL:  "https://www.themealdb.com/meal/52771-spicy-arrabiata-penne-recipe",
 		Ingredients: []string{
-			"Penne rigate - 1 pound",
-			"Olive oil - 1/4 cup",
-			"Garlic - 3 cloves",
-			"Chopped tomatoes - 1 tin",
-			"Red chilli flakes - 1/2 teaspoon",
-			"Italian seasoning - 1/2 teaspoon",
-			"Basil - 6 leaves",
-			"Parmigiano-Reggiano - for serving",
+			"Пенне ригате - 450 г",
+			"Оливковое масло - 1/4 стакана",
+			"Чеснок - 3 зубчика",
+			"Рубленые томаты - 1 банка",
+			"Хлопья чили - 1/2 ч. л.",
+			"Итальянские травы - 1/2 ч. л.",
+			"Базилик - 6 листьев",
+			"Пармиджано-реджано - для подачи",
 		},
 		Steps: []string{
-			"Boil pasta in salted water until al dente.",
-			"Cook sliced garlic in olive oil until fragrant.",
-			"Add tomatoes, chilli flakes, and seasoning; simmer for about 5 minutes.",
-			"Toss drained pasta with the sauce, then finish with basil and cheese.",
+			"Отварите пасту в соленой воде до al dente.",
+			"Прогрейте нарезанный чеснок в оливковом масле до аромата.",
+			"Добавьте томаты, чили и травы; тушите около 5 минут.",
+			"Смешайте пасту с соусом, затем добавьте базилик и сыр.",
 		},
 	},
 	{
 		ID:         "chicken-handi",
-		Name:       "Chicken Handi",
-		Area:       "Indian",
-		Category:   "Chicken",
-		Time:       "50 min",
-		Difficulty: "Medium",
+		Name:       "Курица handi",
+		Area:       "Индия",
+		Category:   "Курица",
+		Time:       "50 мин",
+		Difficulty: "средне",
 		PhotoURL:   "https://www.themealdb.com/images/media/meals/wyxwsp1486979827.jpg",
 		SourceURL:  "https://www.themealdb.com/meal/52795-chicken-handi-recipe",
 		Ingredients: []string{
-			"Chicken - 1.2 kg",
-			"Onions - 5 thinly sliced",
-			"Tomatoes - 2 finely chopped",
-			"Garlic - 8 cloves",
-			"Ginger paste - 1 tablespoon",
-			"Vegetable oil - 1/4 cup",
-			"Cumin seeds - 2 teaspoons",
-			"Coriander seeds - 3 teaspoons",
-			"Turmeric - 1 teaspoon",
-			"Chilli powder - 1 teaspoon",
-			"Yogurt - 1 cup",
-			"Cream - 3/4 cup",
-			"Garam masala - 1 teaspoon",
+			"Курица - 1,2 кг",
+			"Лук - 5 тонко нарезанных",
+			"Томаты - 2 мелко нарезанных",
+			"Чеснок - 8 зубчиков",
+			"Имбирная паста - 1 ст. л.",
+			"Растительное масло - 1/4 стакана",
+			"Зира - 2 ч. л.",
+			"Семена кориандра - 3 ч. л.",
+			"Куркума - 1 ч. л.",
+			"Порошок чили - 1 ч. л.",
+			"Йогурт - 1 стакан",
+			"Сливки - 3/4 стакана",
+			"Гарам масала - 1 ч. л.",
 		},
 		Steps: []string{
-			"Fry onions until golden, then set them aside.",
-			"Cook garlic and tomatoes, then add ginger and ground spices.",
-			"Add chicken and cook until sealed and tender.",
-			"Lower the heat, stir in yogurt, then finish with cream, fenugreek, and garam masala.",
-			"Serve hot with naan or roti.",
+			"Обжарьте лук до золотистого цвета и отложите.",
+			"Прогрейте чеснок и томаты, затем добавьте имбирь и специи.",
+			"Добавьте курицу и готовьте, пока мясо не схватится и не станет мягким.",
+			"Убавьте огонь, вмешайте йогурт, затем добавьте сливки, пажитник и гарам масалу.",
+			"Подавайте горячей с naan или roti.",
 		},
 	},
 	{
 		ID:         "beef-pie",
-		Name:       "Beef and Mustard Pie",
-		Area:       "British",
-		Category:   "Beef",
-		Time:       "2 h 30 min",
-		Difficulty: "Medium",
+		Name:       "Пирог с говядиной и горчицей",
+		Area:       "Британия",
+		Category:   "Говядина",
+		Time:       "2 ч 30 мин",
+		Difficulty: "средне",
 		PhotoURL:   "https://www.themealdb.com/images/media/meals/sytuqu1511553755.jpg",
 		SourceURL:  "https://www.themealdb.com/meal/52874-beef-and-mustard-pie-recipe",
 		Ingredients: []string{
-			"Beef - 1 kg",
-			"Plain flour - 2 tablespoons",
-			"Rapeseed oil - 2 tablespoons",
-			"Red wine - 200 ml",
-			"Beef stock - 400 ml",
-			"Onion - 1 sliced",
-			"Carrots - 2 chopped",
-			"Thyme - 3 sprigs",
-			"Mustard - 2 tablespoons",
-			"Puff pastry - 400 g",
-			"Egg yolks - 2",
-			"Green beans - 300 g",
+			"Говядина - 1 кг",
+			"Пшеничная мука - 2 ст. л.",
+			"Рапсовое масло - 2 ст. л.",
+			"Красное вино - 200 мл",
+			"Говяжий бульон - 400 мл",
+			"Лук - 1 нарезанный",
+			"Морковь - 2 нарезанные",
+			"Тимьян - 3 веточки",
+			"Горчица - 2 ст. л.",
+			"Слоеное тесто - 400 г",
+			"Желтки - 2",
+			"Зеленая фасоль - 300 г",
 		},
 		Steps: []string{
-			"Brown floured beef in oil, then build a sauce with wine and stock.",
-			"Slow-cook with onion, carrots, thyme, and mustard until tender.",
-			"Cool the filling, cover with puff pastry, and brush with egg yolk.",
-			"Bake until the pastry is golden, then serve with buttered green beans.",
+			"Обжарьте говядину в муке на масле, затем соберите соус с вином и бульоном.",
+			"Томите с луком, морковью, тимьяном и горчицей до мягкости.",
+			"Остудите начинку, накройте слоеным тестом и смажьте желтком.",
+			"Запекайте до золотистой корочки и подавайте с фасолью в сливочном масле.",
 		},
 	},
 }
@@ -183,30 +183,30 @@ func (b *Bot) handleMessage(message *telego.Message) error {
 
 	text := strings.TrimSpace(message.Text)
 	switch text {
-	case "/start", ReplyButtons, ReplyRecipes:
+	case "/start", ReplyButtons, ReplyRecipes, "Buttons", "Recipes":
 		return b.sendStart(message.Chat.ID)
-	case ReplyRandomRecipe:
+	case ReplyRandomRecipe, "Random recipe":
 		return b.sendRecipePhoto(message.Chat.ID, b.randomRecipe())
-	case ReplyDevTools:
+	case ReplyDevTools, "Dev tools":
 		return b.sendDevTools(message.Chat.ID)
-	case ReplyPing:
+	case ReplyPing, "Ping":
 		_, err := b.client.SendMessage(&telego.SendMessageParams{
 			ChatID: telego.ChatID{ID: message.Chat.ID},
-			Text:   "Pong. The simulator received your message and the recipe bot answered it.",
+			Text:   "Понг. Эмулятор получил сообщение, а бот-рецептов ответил на него.",
 		})
 		return err
-	case ReplyTraceError:
+	case ReplyTraceError, "Trace error":
 		return b.triggerErrorScenario(message.Chat.ID)
 	default:
 		if text == "" {
-			text = "<empty>"
+			text = "<пусто>"
 		}
 		_, err := b.client.SendMessage(&telego.SendMessageParams{
 			ChatID: telego.ChatID{ID: message.Chat.ID},
-			Text:   "Echo: " + text,
+			Text:   "Эхо: " + text,
 			ReplyMarkup: &telego.InlineKeyboardMarkup{InlineKeyboard: [][]telego.InlineKeyboardButton{
-				{{Text: "Open recipes", CallbackData: CallbackRecipeList}},
-				{{Text: "Dev tools", CallbackData: CallbackDevTools}},
+				{{Text: "Открыть рецепты", CallbackData: CallbackRecipeList}},
+				{{Text: "Инструменты", CallbackData: CallbackDevTools}},
 			}},
 		})
 		return err
@@ -214,11 +214,11 @@ func (b *Bot) handleMessage(message *telego.Message) error {
 }
 
 func (b *Bot) handleFoodPhoto(message *telego.Message) error {
-	text := "Nice photo. I received it as a Telegram photo update."
+	text := "Фото получено как Telegram photo update."
 	if strings.TrimSpace(message.Caption) != "" {
-		text += "\nCaption: " + strings.TrimSpace(message.Caption)
+		text += "\nПодпись: " + strings.TrimSpace(message.Caption)
 	}
-	text += "\nPick a recipe idea from the demo catalog:"
+	text += "\nВыберите идею рецепта из демо-каталога:"
 	_, err := b.client.SendMessage(&telego.SendMessageParams{
 		ChatID:      telego.ChatID{ID: message.Chat.ID},
 		Text:        text,
@@ -234,110 +234,110 @@ func (b *Bot) handleCallback(query *telego.CallbackQuery) error {
 
 	switch {
 	case query.Data == CallbackRecipeList:
-		if err := b.answer(query.ID, "Opening recipes"); err != nil {
+		if err := b.answer(query.ID, "Открываю рецепты"); err != nil {
 			return err
 		}
 		chatID, ok := callbackChatID(query)
 		if !ok {
-			return b.alert(query.ID, "Cannot resolve chat for recipe list")
+			return b.alert(query.ID, "Не удалось определить чат для списка рецептов")
 		}
 		return b.sendRecipeList(chatID)
 	case query.Data == CallbackRecipeRandom:
-		if err := b.answer(query.ID, "Choosing a recipe"); err != nil {
+		if err := b.answer(query.ID, "Выбираю рецепт"); err != nil {
 			return err
 		}
 		chatID, ok := callbackChatID(query)
 		if !ok {
-			return b.alert(query.ID, "Cannot resolve chat for recipe")
+			return b.alert(query.ID, "Не удалось определить чат для рецепта")
 		}
 		return b.sendRecipePhoto(chatID, b.randomRecipe())
 	case strings.HasPrefix(query.Data, CallbackRecipePrefix):
-		if err := b.answer(query.ID, "Sending recipe card"); err != nil {
+		if err := b.answer(query.ID, "Отправляю карточку рецепта"); err != nil {
 			return err
 		}
 		chatID, ok := callbackChatID(query)
 		if !ok {
-			return b.alert(query.ID, "Cannot resolve chat for recipe")
+			return b.alert(query.ID, "Не удалось определить чат для рецепта")
 		}
 		found, ok := findRecipe(strings.TrimPrefix(query.Data, CallbackRecipePrefix))
 		if !ok {
-			return b.alert(query.ID, "Recipe not found")
+			return b.alert(query.ID, "Рецепт не найден")
 		}
 		return b.sendRecipePhoto(chatID, found)
 	case strings.HasPrefix(query.Data, CallbackIngredients):
-		if err := b.answer(query.ID, "Opening ingredients"); err != nil {
+		if err := b.answer(query.ID, "Открываю ингредиенты"); err != nil {
 			return err
 		}
 		chatID, ok := callbackChatID(query)
 		if !ok {
-			return b.alert(query.ID, "Cannot resolve chat for ingredients")
+			return b.alert(query.ID, "Не удалось определить чат для ингредиентов")
 		}
 		found, ok := findRecipe(strings.TrimPrefix(query.Data, CallbackIngredients))
 		if !ok {
-			return b.alert(query.ID, "Recipe not found")
+			return b.alert(query.ID, "Рецепт не найден")
 		}
-		return b.sendRecipeDetails(chatID, found.Name+" ingredients", found.Ingredients)
+		return b.sendRecipeDetails(chatID, "Ингредиенты: "+found.Name, found.Ingredients)
 	case strings.HasPrefix(query.Data, CallbackSteps):
-		if err := b.answer(query.ID, "Opening steps"); err != nil {
+		if err := b.answer(query.ID, "Открываю шаги"); err != nil {
 			return err
 		}
 		chatID, ok := callbackChatID(query)
 		if !ok {
-			return b.alert(query.ID, "Cannot resolve chat for steps")
+			return b.alert(query.ID, "Не удалось определить чат для шагов")
 		}
 		found, ok := findRecipe(strings.TrimPrefix(query.Data, CallbackSteps))
 		if !ok {
-			return b.alert(query.ID, "Recipe not found")
+			return b.alert(query.ID, "Рецепт не найден")
 		}
-		return b.sendRecipeDetails(chatID, found.Name+" steps", found.Steps)
+		return b.sendRecipeDetails(chatID, "Шаги: "+found.Name, found.Steps)
 	case query.Data == CallbackDevTools:
-		if err := b.answer(query.ID, "Opening dev tools"); err != nil {
+		if err := b.answer(query.ID, "Открываю инструменты"); err != nil {
 			return err
 		}
 		chatID, ok := callbackChatID(query)
 		if !ok {
-			return b.alert(query.ID, "Cannot resolve chat for dev tools")
+			return b.alert(query.ID, "Не удалось определить чат для инструментов")
 		}
 		return b.sendDevTools(chatID)
 	case query.Data == CallbackEdit:
 		if err := b.client.AnswerCallbackQuery(&telego.AnswerCallbackQueryParams{
 			CallbackQueryID: query.ID,
-			Text:            "Editing the original bot message",
+			Text:            "Редактирую исходное сообщение бота",
 		}); err != nil {
 			return err
 		}
 		msg, ok := accessibleCallbackMessage(query)
 		if !ok {
-			return b.alert(query.ID, "Callback message is not accessible")
+			return b.alert(query.ID, "Сообщение callback недоступно")
 		}
 		_, err := b.client.EditMessageText(&telego.EditMessageTextParams{
 			ChatID:    telego.ChatID{ID: msg.Chat.ID},
 			MessageID: msg.MessageID,
-			Text:      "Edited by the showcase bot at " + b.now().Format("15:04:05"),
+			Text:      "Витринный бот отредактировал сообщение в " + b.now().Format("15:04:05"),
 			ReplyMarkup: &telego.InlineKeyboardMarkup{InlineKeyboard: [][]telego.InlineKeyboardButton{
-				{{Text: "Back to dev tools", CallbackData: CallbackDevTools}},
+				{{Text: "Назад к инструментам", CallbackData: CallbackDevTools}},
 			}},
 		})
 		return err
 	case query.Data == CallbackToast:
 		return b.client.AnswerCallbackQuery(&telego.AnswerCallbackQueryParams{
 			CallbackQueryID: query.ID,
-			Text:            "Toast from answerCallbackQuery",
+			Text:            "Toast из answerCallbackQuery",
 		})
 	case query.Data == CallbackDeleteTemp:
 		if err := b.client.AnswerCallbackQuery(&telego.AnswerCallbackQueryParams{
 			CallbackQueryID: query.ID,
-			Text:            "Creating and deleting a temporary message",
+			Text:            "Создаю и удаляю временное сообщение",
 		}); err != nil {
 			return err
 		}
 		chatID, ok := callbackChatID(query)
 		if !ok {
-			return b.alert(query.ID, "Cannot resolve chat for temporary message")
+			return b.alert(query.ID, "Не удалось определить чат для временного сообщения")
 		}
 		sent, err := b.client.SendMessage(&telego.SendMessageParams{
 			ChatID: telego.ChatID{ID: chatID},
-			Text:   "Temporary message. It should disappear immediately.",
+			Text:   "Временное сообщение. Оно должно сразу исчезнуть.",
 		})
 		if err != nil {
 			return err
@@ -349,30 +349,30 @@ func (b *Bot) handleCallback(query *telego.CallbackQuery) error {
 	case query.Data == CallbackReply:
 		if err := b.client.AnswerCallbackQuery(&telego.AnswerCallbackQueryParams{
 			CallbackQueryID: query.ID,
-			Text:            "Reply keyboard sent",
+			Text:            "Reply keyboard отправлена",
 		}); err != nil {
 			return err
 		}
 		chatID, ok := callbackChatID(query)
 		if !ok {
-			return b.alert(query.ID, "Cannot resolve chat for reply keyboard")
+			return b.alert(query.ID, "Не удалось определить чат для reply keyboard")
 		}
 		return b.sendReplyKeyboard(chatID)
 	case query.Data == CallbackError:
 		if err := b.client.AnswerCallbackQuery(&telego.AnswerCallbackQueryParams{
 			CallbackQueryID: query.ID,
-			Text:            "Triggering a visible trace error",
+			Text:            "Создаю видимую trace-ошибку",
 			ShowAlert:       true,
 		}); err != nil {
 			return err
 		}
 		chatID, ok := callbackChatID(query)
 		if !ok {
-			return b.alert(query.ID, "Cannot resolve chat for trace error")
+			return b.alert(query.ID, "Не удалось определить чат для trace-ошибки")
 		}
 		return b.triggerErrorScenario(chatID)
 	default:
-		return b.alert(query.ID, "Unknown showcase callback: "+query.Data)
+		return b.alert(query.ID, "Неизвестный callback витрины: "+query.Data)
 	}
 }
 
@@ -380,8 +380,8 @@ func (b *Bot) sendStart(chatID int64) error {
 	_, err := b.client.SendMessage(&telego.SendMessageParams{
 		ChatID: telego.ChatID{ID: chatID},
 		Text: strings.Join([]string{
-			"Recipe bot is ready.",
-			"Browse recipe cards, open ingredients and steps, attach a food photo, or use dev tools to test callbacks, edits, deletes, reply keyboards, and trace errors.",
+			"Бот-рецептов готов.",
+			"Открывайте карточки рецептов, смотрите ингредиенты и шаги, прикрепляйте фото еды или используйте инструменты для проверки callbacks, edit/delete, reply keyboard и trace-ошибок.",
 		}, "\n"),
 		ReplyMarkup: startInlineKeyboard(),
 	})
@@ -391,7 +391,7 @@ func (b *Bot) sendStart(chatID int64) error {
 func (b *Bot) sendRecipeList(chatID int64) error {
 	_, err := b.client.SendMessage(&telego.SendMessageParams{
 		ChatID:      telego.ChatID{ID: chatID},
-		Text:        "Choose a recipe from the demo catalog:",
+		Text:        "Выберите рецепт из демо-каталога:",
 		ReplyMarkup: recipeListKeyboard(),
 	})
 	return err
@@ -410,7 +410,7 @@ func (b *Bot) sendRecipePhoto(chatID int64, item recipe) error {
 		Caption: strings.Join([]string{
 			item.Name,
 			item.Area + " / " + item.Category,
-			"Time: " + item.Time + " | Difficulty: " + item.Difficulty,
+			"Время: " + item.Time + " | Сложность: " + item.Difficulty,
 		}, "\n"),
 		ReplyMarkup: recipeDetailKeyboard(item),
 	})
@@ -422,8 +422,8 @@ func (b *Bot) sendRecipeDetails(chatID int64, title string, lines []string) erro
 		ChatID: telego.ChatID{ID: chatID},
 		Text:   title + "\n" + numberedLines(lines),
 		ReplyMarkup: &telego.InlineKeyboardMarkup{InlineKeyboard: [][]telego.InlineKeyboardButton{
-			{{Text: "Back to recipes", CallbackData: CallbackRecipeList}},
-			{{Text: "Dev tools", CallbackData: CallbackDevTools}},
+			{{Text: "Назад к рецептам", CallbackData: CallbackRecipeList}},
+			{{Text: "Инструменты", CallbackData: CallbackDevTools}},
 		}},
 	})
 	return err
@@ -432,7 +432,7 @@ func (b *Bot) sendRecipeDetails(chatID int64, title string, lines []string) erro
 func (b *Bot) sendReplyKeyboard(chatID int64) error {
 	_, err := b.client.SendMessage(&telego.SendMessageParams{
 		ChatID: telego.ChatID{ID: chatID},
-		Text:   "Reply keyboard is active. Press a command below or type any text for echo.",
+		Text:   "Reply keyboard активна. Нажмите команду ниже или напишите любой текст для эхо-ответа.",
 		ReplyMarkup: &telego.ReplyKeyboardMarkup{
 			Keyboard: [][]telego.KeyboardButton{
 				{{Text: ReplyRecipes}, {Text: ReplyRandomRecipe}},
@@ -440,7 +440,7 @@ func (b *Bot) sendReplyKeyboard(chatID int64) error {
 				{{Text: ReplyTraceError}},
 			},
 			ResizeKeyboard:        true,
-			InputFieldPlaceholder: "Try Recipes, Random recipe, or Trace error",
+			InputFieldPlaceholder: "Попробуйте Рецепты, Случайный рецепт или Ошибка trace",
 		},
 	})
 	return err
@@ -450,8 +450,8 @@ func (b *Bot) sendDevTools(chatID int64) error {
 	_, err := b.client.SendMessage(&telego.SendMessageParams{
 		ChatID: telego.ChatID{ID: chatID},
 		Text: strings.Join([]string{
-			"Developer tools are ready.",
-			"Use these buttons to exercise Bot API callbacks, edits, deletes, reply keyboards, and trace errors.",
+			"Инструменты разработчика готовы.",
+			"Эти кнопки проверяют Bot API callbacks, редактирование, удаление, reply keyboard и trace-ошибки.",
 		}, "\n"),
 		ReplyMarkup: devToolsInlineKeyboard(),
 	})
@@ -464,7 +464,7 @@ func (b *Bot) triggerErrorScenario(chatID int64) error {
 	}
 	_, err := b.client.SendMessage(&telego.SendMessageParams{
 		ChatID: telego.ChatID{ID: chatID},
-		Text:   "A deliberately invalid Bot API call was sent. The console should show it as an error.",
+		Text:   "Отправлен намеренно неправильный Bot API вызов. В консоли он должен появиться как ошибка.",
 	})
 	return err
 }
@@ -494,15 +494,15 @@ func (b *Bot) randomRecipe() recipe {
 func startInlineKeyboard() *telego.InlineKeyboardMarkup {
 	return &telego.InlineKeyboardMarkup{InlineKeyboard: [][]telego.InlineKeyboardButton{
 		{
-			{Text: "Browse recipes", CallbackData: CallbackRecipeList},
-			{Text: "Surprise me", CallbackData: CallbackRecipeRandom},
+			{Text: "Смотреть рецепты", CallbackData: CallbackRecipeList},
+			{Text: "Удиви меня", CallbackData: CallbackRecipeRandom},
 		},
 		{
 			{Text: "Reply keyboard", CallbackData: CallbackReply},
-			{Text: "Dev tools", CallbackData: CallbackDevTools},
+			{Text: "Инструменты", CallbackData: CallbackDevTools},
 		},
 		{
-			{Text: "Trace error", CallbackData: CallbackError},
+			{Text: "Ошибка trace", CallbackData: CallbackError},
 		},
 	}}
 }
@@ -515,8 +515,8 @@ func recipeListKeyboard() *telego.InlineKeyboardMarkup {
 		})
 	}
 	rows = append(rows,
-		[]telego.InlineKeyboardButton{{Text: "Surprise me", CallbackData: CallbackRecipeRandom}},
-		[]telego.InlineKeyboardButton{{Text: "Dev tools", CallbackData: CallbackDevTools}},
+		[]telego.InlineKeyboardButton{{Text: "Удиви меня", CallbackData: CallbackRecipeRandom}},
+		[]telego.InlineKeyboardButton{{Text: "Инструменты", CallbackData: CallbackDevTools}},
 	)
 	return &telego.InlineKeyboardMarkup{InlineKeyboard: rows}
 }
@@ -524,15 +524,15 @@ func recipeListKeyboard() *telego.InlineKeyboardMarkup {
 func recipeDetailKeyboard(item recipe) *telego.InlineKeyboardMarkup {
 	return &telego.InlineKeyboardMarkup{InlineKeyboard: [][]telego.InlineKeyboardButton{
 		{
-			{Text: "Ingredients", CallbackData: CallbackIngredients + item.ID},
-			{Text: "Steps", CallbackData: CallbackSteps + item.ID},
+			{Text: "Ингредиенты", CallbackData: CallbackIngredients + item.ID},
+			{Text: "Шаги", CallbackData: CallbackSteps + item.ID},
 		},
 		{
-			{Text: "Open source", URL: item.SourceURL},
-			{Text: "Another", CallbackData: CallbackRecipeRandom},
+			{Text: "Источник", URL: item.SourceURL},
+			{Text: "Другой", CallbackData: CallbackRecipeRandom},
 		},
 		{
-			{Text: "All recipes", CallbackData: CallbackRecipeList},
+			{Text: "Все рецепты", CallbackData: CallbackRecipeList},
 		},
 	}}
 }
@@ -544,12 +544,12 @@ func devToolsInlineKeyboard() *telego.InlineKeyboardMarkup {
 			{Text: "Toast", CallbackData: CallbackToast},
 		},
 		{
-			{Text: "Delete temp", CallbackData: CallbackDeleteTemp},
+			{Text: "Удалить временное", CallbackData: CallbackDeleteTemp},
 			{Text: "Reply keyboard", CallbackData: CallbackReply},
 		},
 		{
-			{Text: "Trace error", CallbackData: CallbackError},
-			{Text: "Recipes", CallbackData: CallbackRecipeList},
+			{Text: "Ошибка trace", CallbackData: CallbackError},
+			{Text: "Рецепты", CallbackData: CallbackRecipeList},
 		},
 	}}
 }

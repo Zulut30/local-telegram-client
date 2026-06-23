@@ -37,6 +37,10 @@ func NewWithStore(cfg config.Config, logger *slog.Logger, st store.Store) http.H
 	mux.HandleFunc("GET /_sim/traces", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "result": recorder.Snapshot()})
 	})
+	mux.HandleFunc("POST /_sim/traces/reset", func(w http.ResponseWriter, _ *http.Request) {
+		recorder.Reset()
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "result": true})
+	})
 	mux.Handle("GET /_sim/events", hub)
 	mux.Handle("GET /", webui.Handler())
 

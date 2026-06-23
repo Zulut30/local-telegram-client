@@ -5,7 +5,7 @@ import type { CallbackAnswerEventPayload, Chat, Message, MessageEventPayload, Si
 const fallbackChat: Chat = {
   id: 1,
   type: 'private',
-  first_name: 'Chat 1',
+  first_name: 'Чат 1',
 };
 
 function sortMessages(messages: Message[]): Message[] {
@@ -52,7 +52,7 @@ export function useSimState() {
     (delayMs = 500) => {
       window.setTimeout(() => {
         refresh().catch((err: unknown) => {
-          setError(errorMessage(err, 'Failed to refresh state'));
+          setError(errorMessage(err, 'Не удалось обновить состояние'));
         });
       }, delayMs);
     },
@@ -63,7 +63,7 @@ export function useSimState() {
     const controller = new AbortController();
     refresh(controller.signal).catch((err: unknown) => {
       if (!controller.signal.aborted) {
-        setError(err instanceof Error ? err.message : 'Failed to load state');
+        setError(err instanceof Error ? err.message : 'Не удалось загрузить состояние');
       }
     });
     return () => controller.abort();
@@ -85,7 +85,7 @@ export function useSimState() {
     });
     source.addEventListener('callback_answer', (event) => {
       const payload = JSON.parse(event.data) as CallbackAnswerEventPayload;
-      setCallbackNotice(payload.text || 'Callback answered');
+      setCallbackNotice(payload.text || 'Callback обработан');
       if (callbackNoticeTimer.current !== null) {
         window.clearTimeout(callbackNoticeTimer.current);
       }
@@ -122,7 +122,7 @@ export function useSimState() {
         await refresh();
         refreshLater();
       } catch (err) {
-        setError(errorMessage(err, 'Failed to send message'));
+        setError(errorMessage(err, 'Не удалось отправить сообщение'));
       }
     },
     [refresh, refreshLater, selectedChatID],
@@ -136,7 +136,7 @@ export function useSimState() {
         await refresh();
         refreshLater();
       } catch (err) {
-        setError(errorMessage(err, 'Failed to send photo'));
+        setError(errorMessage(err, 'Не удалось отправить фото'));
       }
     },
     [refresh, refreshLater, selectedChatID],
@@ -150,7 +150,7 @@ export function useSimState() {
         await refresh();
         refreshLater();
       } catch (err) {
-        setError(errorMessage(err, 'Failed to send callback'));
+        setError(errorMessage(err, 'Не удалось отправить callback'));
       }
     },
     [refresh, refreshLater],
@@ -165,7 +165,7 @@ export function useSimState() {
       setSelectedChatID(fallbackChat.id);
       await refresh();
     } catch (err) {
-      setError(errorMessage(err, 'Failed to reset session'));
+      setError(errorMessage(err, 'Не удалось сбросить сессию'));
     }
   }, [refresh]);
 

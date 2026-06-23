@@ -314,6 +314,70 @@ func TestSimResetClearsStateAndTraces(t *testing.T) {
 	}
 }
 
+func TestSimTraceResetKeepsChatState(t *testing.T) {
+	st := store.NewMemory()
+	cfg := config.Config{Mode: config.ModeLocal, BotToken: "1234567890:aaaabbbbaaaabbbbaaaabbbbaaaabbbbccc", BufferSize: 100}
+	handler := NewWithStore(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), st)
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+
+	bot, err := telego.NewBot(cfg.BotToken, telego.WithAPIServer(srv.URL), telego.WithDiscardLogger())
+	if err != nil {
+		t.Fatalf("NewBot returned error: %v", err)
+	}
+
+	resp, err := http.Post(srv.URL+"/_sim/inject", "application/json", strings.NewReader(`{"type":"message","chat_id":42,"user_id":7,"text":"/start"}`))
+	if err != nil {
+		t.Fatalf("inject request failed: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("inject status = %d, want 200", resp.StatusCode)
+	}
+
+	updates, err := bot.GetUpdates(&telego.GetUpdatesParams{Limit: 10, Timeout: 1})
+	if err != nil {
+		t.Fatalf("GetUpdates returned error: %v", err)
+	}
+	if len(updates) != 1 {
+		t.Fatalf("updates length = %d, want 1", len(updates))
+	}
+	if _, err := bot.SendMessage(&telego.SendMessageParams{ChatID: telego.ChatID{ID: 42}, Text: "keep this message"}); err != nil {
+		t.Fatalf("SendMessage returned error: %v", err)
+	}
+
+	tracesBefore := readSimResult[[]any](t, srv.URL+"/_sim/traces")
+	if len(tracesBefore) == 0 {
+		t.Fatal("traces before trace reset length = 0, want at least 1")
+	}
+
+	resetResp, err := http.Post(srv.URL+"/_sim/traces/reset", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatalf("trace reset request failed: %v", err)
+	}
+	_ = resetResp.Body.Close()
+	if resetResp.StatusCode != http.StatusOK {
+		t.Fatalf("trace reset status = %d, want 200", resetResp.StatusCode)
+	}
+
+	tracesAfter := readSimResult[[]any](t, srv.URL+"/_sim/traces")
+	if len(tracesAfter) != 0 {
+		t.Fatalf("traces after trace reset length = %d, want 0", len(tracesAfter))
+	}
+
+	state, err := st.State(context.Background())
+	if err != nil {
+		t.Fatalf("State returned error: %v", err)
+	}
+	messages := state.Messages["42"]
+	if len(messages) != 2 {
+		t.Fatalf("messages after trace reset length = %d, want 2", len(messages))
+	}
+	if messages[0].Text != "/start" || messages[1].Text != "keep this message" {
+		t.Fatalf("messages after trace reset = %q, %q", messages[0].Text, messages[1].Text)
+	}
+}
+
 func TestSimResetPreservesWebhookConfig(t *testing.T) {
 	st := store.NewMemory()
 	cfg := config.Config{Mode: config.ModeLocal, BotToken: "1234567890:aaaabbbbaaaabbbbaaaabbbbaaaabbbbccc", BufferSize: 100}

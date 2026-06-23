@@ -9,9 +9,9 @@ interface MessageListProps {
 
 function senderName(message: Message): string {
   if (message.from?.is_bot) {
-    return message.from.username || message.from.first_name || 'Bot';
+    return message.from.username || message.from.first_name || 'Бот';
   }
-  return message.from?.first_name || message.chat.first_name || 'You';
+  return message.from?.first_name || message.chat.first_name || 'Вы';
 }
 
 function messageTime(message: Message): string {
@@ -26,8 +26,8 @@ export function MessageList({ messages, onCallback, onReplyText }: MessageListPr
     <div className="messages" aria-live="polite">
       {messages.length === 0 ? (
         <div className="empty empty--chat">
-          <strong>No messages here yet</strong>
-          <span>Press "Send /start" or type below to begin.</span>
+          <strong>Здесь пока нет сообщений</strong>
+          <span>Нажмите «Отправить /start» или напишите сообщение ниже.</span>
         </div>
       ) : null}
       {messages.map((message) => {
@@ -39,7 +39,7 @@ export function MessageList({ messages, onCallback, onReplyText }: MessageListPr
               <strong>{senderName(message)}</strong>
               <time dateTime={new Date(message.date * 1000).toISOString()}>{messageTime(message)}</time>
             </div>
-            {message.photo_url ? <img className="message__photo" src={message.photo_url} alt={body || 'Telegram photo'} /> : null}
+            {message.photo_url ? <img className="message__photo" src={message.photo_url} alt={body || 'Фото Telegram'} /> : null}
             {body ? <p>{body}</p> : null}
             <Keyboard message={message} markup={message.reply_markup} onCallback={onCallback} onReplyText={onReplyText} />
           </article>
