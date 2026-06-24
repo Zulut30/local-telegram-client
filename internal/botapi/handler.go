@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"mime"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/Zulut30/local-telegram-client/internal/config"
 	"github.com/Zulut30/local-telegram-client/internal/events"
+	"github.com/Zulut30/local-telegram-client/internal/media"
 	"github.com/Zulut30/local-telegram-client/internal/store"
 	"github.com/Zulut30/local-telegram-client/internal/tg"
 	tracing "github.com/Zulut30/local-telegram-client/internal/trace"
@@ -30,17 +32,19 @@ type Handler struct {
 	logger   *slog.Logger
 	bot      tg.User
 	hub      *events.Hub
+	media    media.Store
 	recorder *tracing.Recorder
 	webhooks *webhook.Manager
 }
 
-func New(cfg config.Config, st store.Store, logger *slog.Logger, hub *events.Hub, recorder *tracing.Recorder, webhooks *webhook.Manager) *Handler {
+func New(cfg config.Config, st store.Store, logger *slog.Logger, hub *events.Hub, mediaStore media.Store, recorder *tracing.Recorder, webhooks *webhook.Manager) *Handler {
 	return &Handler{
 		cfg:      cfg,
 		store:    st,
 		logger:   logger,
 		bot:      BotUser(cfg.BotToken),
 		hub:      hub,
+		media:    mediaStore,
 		recorder: recorder,
 		webhooks: webhooks,
 	}
@@ -110,6 +114,8 @@ func (h *Handler) dispatch(w http.ResponseWriter, r *http.Request, method string
 		h.handleDeleteWebhook(w, r, params)
 	case "getWebhookInfo":
 		h.handleGetWebhookInfo(w)
+	case "getFile":
+		h.handleGetFile(w, r, params)
 	case "sendMessage":
 		h.handleSendMessage(w, r, params)
 	case "sendPhoto":
@@ -377,8 +383,12 @@ func (h *Handler) handleSendPhoto(w http.ResponseWriter, r *http.Request, params
 		writeError(w, http.StatusBadRequest, 400, "chat_id is required")
 		return
 	}
-	photo, _ := params.String("photo", "")
-	if photo == "" {
+	photoRef, photoSizes, err := h.resolvePhoto(r, params)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, 400, err.Error())
+		return
+	}
+	if photoRef == "" {
 		writeError(w, http.StatusBadRequest, 400, "photo is required")
 		return
 	}
@@ -406,9 +416,10 @@ func (h *Handler) handleSendPhoto(w http.ResponseWriter, r *http.Request, params
 		Caption:          caption,
 		CaptionEntities:  captionEntities,
 		CaptionParseMode: captionParseMode,
-		PhotoURL:         photo,
+		Photo:            photoSizes,
+		PhotoURL:         photoRef,
 		MediaKind:        "photo",
-		MediaURL:         photo,
+		MediaURL:         photoRef,
 		ReplyMarkup:      replyMarkup,
 		ReplyToMessageID: replyToMessageID,
 	})
@@ -418,6 +429,25 @@ func (h *Handler) handleSendPhoto(w http.ResponseWriter, r *http.Request, params
 	}
 	h.broadcastMessage("created", msg)
 	writeOK(w, msg)
+}
+
+func (h *Handler) resolvePhoto(r *http.Request, params parameters) (string, []tg.PhotoSize, error) {
+	if upload, ok := params.Upload("photo"); ok {
+		file, err := h.saveUploadedMedia(r, "photo", upload)
+		if err != nil {
+			return "", nil, err
+		}
+		return simFileURL(file), photoSizesForFile(file), nil
+	}
+
+	photo, _ := params.String("photo", "")
+	if photo == "" {
+		return "", nil, nil
+	}
+	if file, ok := h.lookupMedia(r, photo); ok {
+		return simFileURL(file), photoSizesForFile(file), nil
+	}
+	return photo, nil, nil
 }
 
 func (h *Handler) handleSendRichMessage(w http.ResponseWriter, r *http.Request, params parameters) {
@@ -669,6 +699,28 @@ func (h *Handler) handleGetCustomEmojiStickers(w http.ResponseWriter, params par
 	writeOK(w, stickers)
 }
 
+func (h *Handler) handleGetFile(w http.ResponseWriter, r *http.Request, params parameters) {
+	fileID, _ := params.String("file_id", "")
+	if fileID == "" {
+		writeError(w, http.StatusBadRequest, 400, "file_id is required")
+		return
+	}
+	if file, ok := h.lookupMedia(r, fileID); ok {
+		writeOK(w, fileResult(file))
+		return
+	}
+	if h.cfg.EffectiveAPIMode() == config.APIModeStrict {
+		writeError(w, http.StatusBadRequest, 400, "file not found")
+		return
+	}
+	writeOK(w, map[string]any{
+		"file_id":        fileID,
+		"file_unique_id": fileID + "_unique",
+		"file_size":      0,
+		"file_path":      "sim/" + fileID,
+	})
+}
+
 func validChatAction(action string) bool {
 	switch action {
 	case "typing",
@@ -838,11 +890,8 @@ func (h *Handler) handleKnownMethodStub(w http.ResponseWriter, method string, pa
 		"setStickerSetThumbnail", "setCustomEmojiStickerSetThumbnail", "deleteStickerSet",
 		"approveSuggestedPost", "declineSuggestedPost", "setMessageReaction", "setUserEmojiStatus":
 		writeOK(w, true)
-	case "getFile", "uploadStickerFile":
-		fileID, _ := params.String("file_id", "")
-		if fileID == "" {
-			fileID, _ = params.String("sticker", "sim_file")
-		}
+	case "uploadStickerFile":
+		fileID, _ := params.String("sticker", "sim_file")
 		writeOK(w, map[string]any{
 			"file_id":        fileID,
 			"file_unique_id": fileID + "_unique",
@@ -916,6 +965,52 @@ func (h *Handler) handleKnownMethodStub(w http.ResponseWriter, method string, pa
 		writeOK(w, map[string]any{"sent": true})
 	default:
 		writeOK(w, true)
+	}
+}
+
+func (h *Handler) saveUploadedMedia(r *http.Request, kind string, upload uploadedFile) (media.File, error) {
+	if h.media == nil {
+		return media.File{}, errors.New("media store is unavailable")
+	}
+	return h.media.Save(r.Context(), media.FileInput{
+		Kind:        kind,
+		FieldName:   upload.FieldName,
+		FileName:    upload.FileName,
+		ContentType: upload.ContentType,
+		Data:        upload.Data,
+	})
+}
+
+func (h *Handler) lookupMedia(r *http.Request, fileID string) (media.File, bool) {
+	if h.media == nil || fileID == "" {
+		return media.File{}, false
+	}
+	file, err := h.media.Get(r.Context(), fileID)
+	return file, err == nil
+}
+
+func fileResult(file media.File) map[string]any {
+	return map[string]any{
+		"file_id":        file.ID,
+		"file_unique_id": file.UniqueID,
+		"file_size":      file.Size,
+		"file_path":      strings.TrimPrefix(simFileURL(file), "/"),
+	}
+}
+
+func simFileURL(file media.File) string {
+	return "/_sim/file/" + url.PathEscape(file.ID)
+}
+
+func photoSizesForFile(file media.File) []tg.PhotoSize {
+	return []tg.PhotoSize{
+		{
+			FileID:       file.ID,
+			FileUniqueID: file.UniqueID,
+			Width:        640,
+			Height:       480,
+			FileSize:     int(file.Size),
+		},
 	}
 }
 
@@ -1050,6 +1145,16 @@ func (w *captureResponseWriter) Meta() responseMeta {
 	return meta
 }
 
+const maxUploadBytes = 32 << 20
+
+type uploadedFile struct {
+	FieldName   string
+	FileName    string
+	ContentType string
+	Size        int64
+	Data        []byte
+}
+
 type parameters map[string]any
 
 func parseParams(r *http.Request) (parameters, error) {
@@ -1097,11 +1202,49 @@ func parseParams(r *http.Request) (parameters, error) {
 				params[key] = values[len(values)-1]
 			}
 		}
+		for key, files := range r.MultipartForm.File {
+			if len(files) == 0 {
+				continue
+			}
+			upload, err := readUploadedFile(key, files[0])
+			if err != nil {
+				return nil, err
+			}
+			params[key] = upload
+		}
 	default:
 		return nil, fmt.Errorf("unsupported content type %q", contentType)
 	}
 
 	return params, nil
+}
+
+func readUploadedFile(fieldName string, header *multipart.FileHeader) (uploadedFile, error) {
+	file, err := header.Open()
+	if err != nil {
+		return uploadedFile{}, fmt.Errorf("open uploaded %s: %w", fieldName, err)
+	}
+	defer file.Close()
+
+	limited := io.LimitReader(file, maxUploadBytes+1)
+	data, err := io.ReadAll(limited)
+	if err != nil {
+		return uploadedFile{}, fmt.Errorf("read uploaded %s: %w", fieldName, err)
+	}
+	if len(data) > maxUploadBytes {
+		return uploadedFile{}, fmt.Errorf("%s upload exceeds 32MiB", fieldName)
+	}
+	contentType := header.Header.Get("Content-Type")
+	if contentType == "" || contentType == "application/octet-stream" {
+		contentType = http.DetectContentType(data)
+	}
+	return uploadedFile{
+		FieldName:   fieldName,
+		FileName:    header.Filename,
+		ContentType: contentType,
+		Size:        int64(len(data)),
+		Data:        data,
+	}, nil
 }
 
 func genericMessageContent(method string, params parameters) (text, caption, mediaKind, mediaURL string) {
@@ -1184,6 +1327,8 @@ func (p parameters) String(key, fallback string) (string, bool) {
 		return typed, true
 	case json.Number:
 		return typed.String(), true
+	case uploadedFile:
+		return typed.FileName, true
 	default:
 		return fmt.Sprint(typed), true
 	}
@@ -1270,9 +1415,27 @@ func (p parameters) ChatIDValue(key string, fallback int64) (int64, error) {
 func (p parameters) TraceParams() map[string]any {
 	out := make(map[string]any, len(p))
 	for key, value := range p {
+		if upload, ok := value.(uploadedFile); ok {
+			out[key] = map[string]any{
+				"uploaded":     true,
+				"filename":     upload.FileName,
+				"content_type": upload.ContentType,
+				"size":         upload.Size,
+			}
+			continue
+		}
 		out[key] = value
 	}
 	return out
+}
+
+func (p parameters) Upload(key string) (uploadedFile, bool) {
+	value, ok := p[key]
+	if !ok || value == nil {
+		return uploadedFile{}, false
+	}
+	upload, ok := value.(uploadedFile)
+	return upload, ok
 }
 
 func (p parameters) RawJSON(key string) (json.RawMessage, error) {

@@ -125,11 +125,11 @@ var statefulCoverageNotes = map[string]string{
 	"deleteMessage":          "deletes a stored message and broadcasts a delete event",
 	"deleteMessages":         "deletes stored messages and broadcasts delete events for found messages",
 	"answerCallbackQuery":    "broadcasts local callback toast or alert events to the UI",
+	"getFile":                "resolves files saved by the simulator and returns a downloadable /_sim/file path",
 	"getCustomEmojiStickers": "returns deterministic custom emoji sticker metadata for UI rendering",
 }
 
 var notYetSemanticCoverageNotes = map[string]string{
-	"getFile":                           "file metadata is stubbed; durable file storage and download bytes are not implemented yet",
 	"uploadStickerFile":                 "multipart file storage is not implemented yet",
 	"sendPaidMedia":                     "paid media and Stars payment semantics are not implemented yet",
 	"sendInvoice":                       "invoice, shipping, pre-checkout, and payment update lifecycle is not implemented yet",

@@ -37,6 +37,9 @@ func TestStrictSupportsImplementedOrRenderedMethodsOnly(t *testing.T) {
 	if !StrictSupports("sendVideo") {
 		t.Fatal("StrictSupports(sendVideo) = false, want true for UI-rendered generic send")
 	}
+	if !StrictSupports("getFile") {
+		t.Fatal("StrictSupports(getFile) = false, want true for media store lookup")
+	}
 	if StrictSupports("sendInvoice") {
 		t.Fatal("StrictSupports(sendInvoice) = true, want false for not-yet-semantic payment flow")
 	}

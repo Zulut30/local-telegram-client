@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -304,6 +305,75 @@ func TestBotAPIFormattingRichMessagesAndRegistry(t *testing.T) {
 	unknownEnv := botCall(t, srv.URL, cfg.BotToken, "definitelyNotTelegram", map[string]any{}, http.StatusNotFound)
 	if unknownEnv.OK || unknownEnv.Description != "method not found" {
 		t.Fatalf("unknown method response = %#v, want method not found", unknownEnv)
+	}
+}
+
+func TestBotAPIMultipartPhotoFileFlow(t *testing.T) {
+	st := store.NewMemory()
+	cfg := config.Config{Mode: config.ModeLocal, BotToken: "1234567890:aaaabbbbaaaabbbbaaaabbbbaaaabbbbccc", BufferSize: 100}
+	handler := NewWithStore(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), st)
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+
+	imageBytes := []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR")
+	env := botMultipartCall(t, srv.URL, cfg.BotToken, "sendPhoto", map[string]string{
+		"chat_id": "42",
+		"caption": "uploaded photo",
+	}, "photo", "tiny.png", imageBytes, http.StatusOK)
+	msg := decodeBotResult[tg.Message](t, env)
+	if len(msg.Photo) != 1 || msg.Photo[0].FileID == "" {
+		t.Fatalf("photo sizes = %#v, want uploaded file_id", msg.Photo)
+	}
+	if !strings.HasPrefix(msg.PhotoURL, "/_sim/file/") {
+		t.Fatalf("PhotoURL = %q, want /_sim/file path", msg.PhotoURL)
+	}
+
+	fileEnv := botCall(t, srv.URL, cfg.BotToken, "getFile", map[string]any{
+		"file_id": msg.Photo[0].FileID,
+	}, http.StatusOK)
+	file := decodeBotResult[botFileResult](t, fileEnv)
+	if file.FileID != msg.Photo[0].FileID || file.FileSize != int64(len(imageBytes)) {
+		t.Fatalf("getFile result = %#v, want uploaded file metadata", file)
+	}
+	if file.FilePath != strings.TrimPrefix(msg.PhotoURL, "/") {
+		t.Fatalf("file_path = %q, want %q", file.FilePath, strings.TrimPrefix(msg.PhotoURL, "/"))
+	}
+
+	downloadResp, err := http.Get(srv.URL + msg.PhotoURL)
+	if err != nil {
+		t.Fatalf("download uploaded file failed: %v", err)
+	}
+	downloaded, err := io.ReadAll(downloadResp.Body)
+	_ = downloadResp.Body.Close()
+	if err != nil {
+		t.Fatalf("read uploaded file response: %v", err)
+	}
+	if downloadResp.StatusCode != http.StatusOK {
+		t.Fatalf("download status = %d, want 200", downloadResp.StatusCode)
+	}
+	if got := downloadResp.Header.Get("Content-Type"); got != "image/png" {
+		t.Fatalf("download content-type = %q, want image/png", got)
+	}
+	if !bytes.Equal(downloaded, imageBytes) {
+		t.Fatalf("downloaded bytes = %q, want original", downloaded)
+	}
+
+	resetResp, err := http.Post(srv.URL+"/_sim/reset", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatalf("reset request failed: %v", err)
+	}
+	_ = resetResp.Body.Close()
+	if resetResp.StatusCode != http.StatusOK {
+		t.Fatalf("reset status = %d, want 200", resetResp.StatusCode)
+	}
+
+	missingResp, err := http.Get(srv.URL + msg.PhotoURL)
+	if err != nil {
+		t.Fatalf("download after reset failed: %v", err)
+	}
+	_ = missingResp.Body.Close()
+	if missingResp.StatusCode != http.StatusNotFound {
+		t.Fatalf("download after reset status = %d, want 404", missingResp.StatusCode)
 	}
 }
 
@@ -611,6 +681,13 @@ func (report coverageReport) MethodLevel(name string) string {
 	return ""
 }
 
+type botFileResult struct {
+	FileID       string `json:"file_id"`
+	FileUniqueID string `json:"file_unique_id"`
+	FileSize     int64  `json:"file_size"`
+	FilePath     string `json:"file_path"`
+}
+
 func botCall(t *testing.T, baseURL, token, method string, body any, wantStatus int) botAPIEnvelope {
 	t.Helper()
 
@@ -641,6 +718,54 @@ func botCall(t *testing.T, baseURL, token, method string, body any, wantStatus i
 	var env botAPIEnvelope
 	if err := json.Unmarshal(respBody, &env); err != nil {
 		t.Fatalf("decode %s response %q: %v", method, respBody, err)
+	}
+	return env
+}
+
+func botMultipartCall(t *testing.T, baseURL, token, method string, fields map[string]string, fileField, fileName string, data []byte, wantStatus int) botAPIEnvelope {
+	t.Helper()
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for key, value := range fields {
+		if err := writer.WriteField(key, value); err != nil {
+			t.Fatalf("write multipart field %s: %v", key, err)
+		}
+	}
+	part, err := writer.CreateFormFile(fileField, fileName)
+	if err != nil {
+		t.Fatalf("create multipart file %s: %v", fileField, err)
+	}
+	if _, err := part.Write(data); err != nil {
+		t.Fatalf("write multipart file %s: %v", fileField, err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, baseURL+"/bot"+token+"/"+method, &body)
+	if err != nil {
+		t.Fatalf("create %s multipart request: %v", method, err)
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("%s multipart request failed: %v", method, err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read %s multipart response: %v", method, err)
+	}
+	if resp.StatusCode != wantStatus {
+		t.Fatalf("%s multipart status = %d, want %d, body = %s", method, resp.StatusCode, wantStatus, respBody)
+	}
+
+	var env botAPIEnvelope
+	if err := json.Unmarshal(respBody, &env); err != nil {
+		t.Fatalf("decode %s multipart response %q: %v", method, respBody, err)
 	}
 	return env
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/Zulut30/local-telegram-client/internal/botapi"
 	"github.com/Zulut30/local-telegram-client/internal/config"
 	"github.com/Zulut30/local-telegram-client/internal/events"
+	"github.com/Zulut30/local-telegram-client/internal/media"
 	"github.com/Zulut30/local-telegram-client/internal/sim"
 	"github.com/Zulut30/local-telegram-client/internal/store"
 	tracing "github.com/Zulut30/local-telegram-client/internal/trace"
@@ -27,10 +28,11 @@ func NewWithStore(cfg config.Config, logger *slog.Logger, st store.Store) http.H
 	hub := events.NewHub(cfg.BufferSize)
 	recorder := tracing.NewRecorder(cfg.BufferSize, hub)
 	webhooks := webhook.New(logger, recorder)
+	mediaStore := media.NewMemory()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", healthz)
-	simHandler := sim.New(st, logger, hub, recorder, webhooks)
+	simHandler := sim.New(st, logger, hub, mediaStore, recorder, webhooks)
 	mux.HandleFunc("POST /_sim/inject", simHandler.Inject)
 	mux.HandleFunc("GET /_sim/state", simHandler.State)
 	mux.HandleFunc("POST /_sim/reset", simHandler.Reset)
@@ -44,10 +46,13 @@ func NewWithStore(cfg config.Config, logger *slog.Logger, st store.Store) http.H
 		recorder.Reset()
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "result": true})
 	})
+	mux.HandleFunc("GET /_sim/file/{file_id}", func(w http.ResponseWriter, r *http.Request) {
+		serveMediaFile(w, r, mediaStore)
+	})
 	mux.Handle("GET /_sim/events", hub)
 	mux.Handle("GET /", webui.Handler())
 
-	botHandler := botapi.New(cfg, st, logger, hub, recorder, webhooks)
+	botHandler := botapi.New(cfg, st, logger, hub, mediaStore, recorder, webhooks)
 	var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/bot") {
 			botHandler.ServeHTTP(w, r)
@@ -71,6 +76,27 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
+}
+
+func serveMediaFile(w http.ResponseWriter, r *http.Request, mediaStore media.Store) {
+	fileID := r.PathValue("file_id")
+	if fileID == "" {
+		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		return
+	}
+	file, err := mediaStore.Get(r.Context(), fileID)
+	if err != nil {
+		http.Error(w, "file not found", http.StatusNotFound)
+		return
+	}
+	if file.ContentType != "" {
+		w.Header().Set("Content-Type", file.ContentType)
+	}
+	if file.FileName != "" {
+		w.Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=%q", file.FileName))
+	}
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(file.Data)
 }
 
 func loggingMiddleware(logger *slog.Logger, next http.Handler) http.Handler {

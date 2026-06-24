@@ -20,6 +20,8 @@ What works today:
 - Local Bot API endpoint compatible with real bot SDKs through `/bot<TOKEN>/<method>`.
 - Stateful polling, webhook delivery, user message injection, callback injection, bot replies,
   edits, deletes, reply markup, media-like messages, and trace correlation.
+- Multipart `sendPhoto` uploads are stored in memory, resolved by `getFile`, and served through
+  `GET /_sim/file/{id}`.
 - `GET /_sim/coverage` exposes a machine-readable Bot API coverage matrix.
 - `--api-mode=compat|strict` switches between permissive compatibility stubs and explicit errors
   for non-semantic methods.
@@ -32,8 +34,8 @@ What works today:
 Main limitations:
 
 - Bot API coverage is broad but shallow outside the core stateful methods.
-- Uploaded files are represented as URLs or fake file IDs; durable byte storage and
-  `/_sim/file/{id}` are not implemented yet.
+- Media storage is in-memory only; durable byte storage and broad upload method coverage are still
+  future work.
 - Persistence flags are reserved; runtime state is in memory by default.
 - Payments, Telegram Stars, Mini Apps, inline mode, business flows, forums, games, passport,
   gifts, and many admin methods do not yet model Telegram behavior deeply.
@@ -111,10 +113,10 @@ Coverage levels:
 
 | Level | Meaning | Current examples |
 |---|---|---|
-| Stateful | The method changes simulator state, is visible in UI, and is covered by integration tests. | `getUpdates`, webhook methods, `sendMessage`, `sendPhoto`, `editMessageText`, `editMessageReplyMarkup`, `deleteMessage`, `answerCallbackQuery`, `sendChatAction`, `sendMessageDraft`, `sendRichMessage`, `getCustomEmojiStickers` |
+| Stateful | The method changes simulator state, is visible in UI, and is covered by integration tests. | `getUpdates`, webhook methods, `sendMessage`, `sendPhoto`, `getFile`, `editMessageText`, `editMessageReplyMarkup`, `deleteMessage`, `answerCallbackQuery`, `sendChatAction`, `sendMessageDraft`, `sendRichMessage`, `getCustomEmojiStickers` |
 | UI-rendered | The UI can display the result, but Telegram semantics may still be simplified. | entities, custom/premium emoji placeholders, HTML parse mode, rich-message tables, media chips, live typing status, streaming draft previews |
 | Compatibility stub | The official method name is accepted and returns deterministic success data so local bots keep running. | lower-priority admin, reaction, profile, sticker-management, and settings methods |
-| Not yet semantic | The method is recognized but does not yet emulate Telegram-side validation, state transitions, events, or edge cases. | payments, invoices, Stars, Mini Apps, inline mode, file downloads, business accounts, gifts, forum topics, games |
+| Not yet semantic | The method is recognized but does not yet emulate Telegram-side validation, state transitions, events, or edge cases. | payments, invoices, Stars, Mini Apps, inline mode, broad file uploads, business accounts, gifts, forum topics, games |
 
 The goal is to move high-value methods from `compatibility stub` to `stateful` in small,
 well-tested slices.
@@ -167,6 +169,11 @@ Still incomplete until:
 - README has a release badge, coverage summary, and a clear versioning policy.
 
 ### G2: Bot API Fidelity
+
+Progress on `main`:
+
+- Done: multipart `sendPhoto` upload storage, `getFile` lookup, and `GET /_sim/file/{id}` download
+  for in-memory files.
 
 Definition of Done:
 
@@ -287,12 +294,12 @@ Implemented:
 
 ```text
 GET  /_sim/coverage                 # Bot API coverage matrix
+GET  /_sim/file/{id}                # in-memory media bytes saved by supported uploads
 ```
 
 Planned:
 
 ```text
-GET  /_sim/file/{id}                # stored media bytes
 POST /_sim/scenarios                # save a scenario
 POST /_sim/scenarios/{id}/run       # replay a scenario
 GET  /_sim/export                   # export session data
@@ -374,6 +381,7 @@ POST /_sim/inject   # inject message or callback_query
 GET  /_sim/state    # chats and messages
 GET  /_sim/traces   # trace ring snapshot
 GET  /_sim/coverage # Bot API coverage matrix and current api mode
+GET  /_sim/file/{id} # stored media bytes
 GET  /_sim/events   # SSE stream
 POST /_sim/reset    # clear chats, messages, pending updates, traces, and webhook state
 POST /_sim/traces/reset # clear traces only, keep chat state
