@@ -301,6 +301,9 @@ func TestBotAPIFormattingRichMessagesAndRegistry(t *testing.T) {
 	if video.MediaKind != "video" || video.MediaURL != "https://example.test/video.mp4" {
 		t.Fatalf("video message = %#v, want generic video message", video)
 	}
+	if video.Video == nil || video.Video.FileID == "" || video.Video.FileName != "video.mp4" {
+		t.Fatalf("video field = %#v, want Telegram-like video metadata", video.Video)
+	}
 
 	unknownEnv := botCall(t, srv.URL, cfg.BotToken, "definitelyNotTelegram", map[string]any{}, http.StatusNotFound)
 	if unknownEnv.OK || unknownEnv.Description != "method not found" {
@@ -374,6 +377,54 @@ func TestBotAPIMultipartPhotoFileFlow(t *testing.T) {
 	_ = missingResp.Body.Close()
 	if missingResp.StatusCode != http.StatusNotFound {
 		t.Fatalf("download after reset status = %d, want 404", missingResp.StatusCode)
+	}
+}
+
+func TestBotAPIGenericMediaUploadFlow(t *testing.T) {
+	st := store.NewMemory()
+	cfg := config.Config{Mode: config.ModeLocal, BotToken: "1234567890:aaaabbbbaaaabbbbaaaabbbbaaaabbbbccc", BufferSize: 100}
+	handler := NewWithStore(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), st)
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+
+	documentBytes := []byte("hello document")
+	env := botMultipartCall(t, srv.URL, cfg.BotToken, "sendDocument", map[string]string{
+		"chat_id": "42",
+		"caption": "uploaded document",
+	}, "document", "hello.txt", documentBytes, http.StatusOK)
+	msg := decodeBotResult[tg.Message](t, env)
+	if msg.Document == nil || msg.Document.FileID == "" {
+		t.Fatalf("document = %#v, want uploaded document metadata", msg.Document)
+	}
+	if msg.Document.FileName != "hello.txt" || msg.Document.FileSize != len(documentBytes) {
+		t.Fatalf("document metadata = %#v, want file name and size", msg.Document)
+	}
+	if msg.MediaKind != "document" || !strings.HasPrefix(msg.MediaURL, "/_sim/file/") {
+		t.Fatalf("media kind/url = %q/%q, want stored document", msg.MediaKind, msg.MediaURL)
+	}
+
+	fileEnv := botCall(t, srv.URL, cfg.BotToken, "getFile", map[string]any{
+		"file_id": msg.Document.FileID,
+	}, http.StatusOK)
+	file := decodeBotResult[botFileResult](t, fileEnv)
+	if file.FilePath != strings.TrimPrefix(msg.MediaURL, "/") {
+		t.Fatalf("file_path = %q, want %q", file.FilePath, strings.TrimPrefix(msg.MediaURL, "/"))
+	}
+
+	downloadResp, err := http.Get(srv.URL + msg.MediaURL)
+	if err != nil {
+		t.Fatalf("download uploaded document failed: %v", err)
+	}
+	downloaded, err := io.ReadAll(downloadResp.Body)
+	_ = downloadResp.Body.Close()
+	if err != nil {
+		t.Fatalf("read uploaded document response: %v", err)
+	}
+	if downloadResp.StatusCode != http.StatusOK {
+		t.Fatalf("document download status = %d, want 200", downloadResp.StatusCode)
+	}
+	if !bytes.Equal(downloaded, documentBytes) {
+		t.Fatalf("downloaded document = %q, want original", downloaded)
 	}
 }
 

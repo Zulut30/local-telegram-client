@@ -32,6 +32,13 @@ type Message struct {
 	CaptionParseMode string          `json:"caption_parse_mode,omitempty"`
 	Photo            []PhotoSize     `json:"photo,omitempty"`
 	PhotoURL         string          `json:"photo_url,omitempty"`
+	Document         *FileRef        `json:"document,omitempty"`
+	Audio            *FileRef        `json:"audio,omitempty"`
+	Video            *FileRef        `json:"video,omitempty"`
+	Animation        *FileRef        `json:"animation,omitempty"`
+	Voice            *FileRef        `json:"voice,omitempty"`
+	VideoNote        *FileRef        `json:"video_note,omitempty"`
+	Sticker          *StickerRef     `json:"sticker,omitempty"`
 	MediaKind        string          `json:"media_kind,omitempty"`
 	MediaURL         string          `json:"media_url,omitempty"`
 	RichMessage      json.RawMessage `json:"rich_message,omitempty"`
@@ -43,6 +50,28 @@ type PhotoSize struct {
 	FileUniqueID string `json:"file_unique_id"`
 	Width        int    `json:"width"`
 	Height       int    `json:"height"`
+	FileSize     int    `json:"file_size,omitempty"`
+}
+
+type FileRef struct {
+	FileID       string `json:"file_id"`
+	FileUniqueID string `json:"file_unique_id"`
+	FileName     string `json:"file_name,omitempty"`
+	MimeType     string `json:"mime_type,omitempty"`
+	FileSize     int    `json:"file_size,omitempty"`
+	Width        int    `json:"width,omitempty"`
+	Height       int    `json:"height,omitempty"`
+	Duration     int    `json:"duration,omitempty"`
+}
+
+type StickerRef struct {
+	FileID       string `json:"file_id"`
+	FileUniqueID string `json:"file_unique_id"`
+	Type         string `json:"type"`
+	Width        int    `json:"width"`
+	Height       int    `json:"height"`
+	IsAnimated   bool   `json:"is_animated"`
+	IsVideo      bool   `json:"is_video"`
 	FileSize     int    `json:"file_size,omitempty"`
 }
 

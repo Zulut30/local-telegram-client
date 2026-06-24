@@ -450,6 +450,69 @@ func (h *Handler) resolvePhoto(r *http.Request, params parameters) (string, []tg
 	return photo, nil, nil
 }
 
+type resolvedMedia struct {
+	Kind      string
+	URL       string
+	Document  *tg.FileRef
+	Audio     *tg.FileRef
+	Video     *tg.FileRef
+	Animation *tg.FileRef
+	Voice     *tg.FileRef
+	VideoNote *tg.FileRef
+	Sticker   *tg.StickerRef
+}
+
+func (h *Handler) resolveGenericMedia(r *http.Request, method string, params parameters, fallbackKind, fallbackURL string) (resolvedMedia, error) {
+	out := resolvedMedia{Kind: fallbackKind, URL: fallbackURL}
+	field, kind, ok := genericMediaField(method)
+	if !ok {
+		return out, nil
+	}
+	out.Kind = kind
+
+	if upload, ok := params.Upload(field); ok {
+		file, err := h.saveUploadedMedia(r, kind, upload)
+		if err != nil {
+			return resolvedMedia{}, err
+		}
+		out.URL = simFileURL(file)
+		out.assignFile(kind, fileRefForMediaFile(file))
+		return out, nil
+	}
+
+	raw, _ := params.String(field, "")
+	if raw == "" {
+		return out, nil
+	}
+	if file, ok := h.lookupMedia(r, raw); ok {
+		out.URL = simFileURL(file)
+		out.assignFile(kind, fileRefForMediaFile(file))
+		return out, nil
+	}
+	out.URL = raw
+	out.assignFile(kind, fileRefForExternal(kind, raw))
+	return out, nil
+}
+
+func (m *resolvedMedia) assignFile(kind string, ref tg.FileRef) {
+	switch kind {
+	case "document":
+		m.Document = &ref
+	case "audio":
+		m.Audio = &ref
+	case "video":
+		m.Video = &ref
+	case "animation":
+		m.Animation = &ref
+	case "voice":
+		m.Voice = &ref
+	case "video_note":
+		m.VideoNote = &ref
+	case "sticker":
+		m.Sticker = stickerForFile(ref)
+	}
+}
+
 func (h *Handler) handleSendRichMessage(w http.ResponseWriter, r *http.Request, params parameters) {
 	chatID, err := params.ChatIDValue("chat_id", 0)
 	if err != nil || chatID == 0 {
@@ -548,6 +611,11 @@ func (h *Handler) handleGenericSendMessage(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	text, caption, mediaKind, mediaURL := genericMessageContent(method, params)
+	resolvedMedia, err := h.resolveGenericMedia(r, method, params, mediaKind, mediaURL)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, 400, err.Error())
+		return
+	}
 	parseMode, _ := params.String("parse_mode", "")
 
 	msg, err := h.store.SaveBotMessage(r.Context(), store.BotMessageInput{
@@ -559,8 +627,15 @@ func (h *Handler) handleGenericSendMessage(w http.ResponseWriter, r *http.Reques
 		Caption:          caption,
 		CaptionEntities:  captionEntities,
 		CaptionParseMode: parseMode,
-		MediaKind:        mediaKind,
-		MediaURL:         mediaURL,
+		Document:         resolvedMedia.Document,
+		Audio:            resolvedMedia.Audio,
+		Video:            resolvedMedia.Video,
+		Animation:        resolvedMedia.Animation,
+		Voice:            resolvedMedia.Voice,
+		VideoNote:        resolvedMedia.VideoNote,
+		Sticker:          resolvedMedia.Sticker,
+		MediaKind:        resolvedMedia.Kind,
+		MediaURL:         resolvedMedia.URL,
 		ReplyMarkup:      replyMarkup,
 	})
 	if err != nil {
@@ -995,6 +1070,82 @@ func fileResult(file media.File) map[string]any {
 		"file_unique_id": file.UniqueID,
 		"file_size":      file.Size,
 		"file_path":      strings.TrimPrefix(simFileURL(file), "/"),
+	}
+}
+
+func fileRefForMediaFile(file media.File) tg.FileRef {
+	return tg.FileRef{
+		FileID:       file.ID,
+		FileUniqueID: file.UniqueID,
+		FileName:     file.FileName,
+		MimeType:     file.ContentType,
+		FileSize:     int(file.Size),
+		Width:        640,
+		Height:       480,
+	}
+}
+
+func fileRefForExternal(kind, value string) tg.FileRef {
+	id := deterministicMediaID(kind, value)
+	return tg.FileRef{
+		FileID:       id,
+		FileUniqueID: id + "_unique",
+		FileName:     externalFileName(value, kind),
+		Width:        640,
+		Height:       480,
+	}
+}
+
+func stickerForFile(ref tg.FileRef) *tg.StickerRef {
+	return &tg.StickerRef{
+		FileID:       ref.FileID,
+		FileUniqueID: ref.FileUniqueID,
+		Type:         "regular",
+		Width:        512,
+		Height:       512,
+		IsAnimated:   false,
+		IsVideo:      false,
+		FileSize:     ref.FileSize,
+	}
+}
+
+func deterministicMediaID(kind, value string) string {
+	hash := fnv.New32a()
+	_, _ = hash.Write([]byte(kind))
+	_, _ = hash.Write([]byte{0})
+	_, _ = hash.Write([]byte(value))
+	return fmt.Sprintf("%s_%08x", strings.ReplaceAll(kind, "_", ""), hash.Sum32())
+}
+
+func externalFileName(value, fallback string) string {
+	cleaned := strings.TrimRight(value, "/")
+	idx := strings.LastIndexByte(cleaned, '/')
+	if idx >= 0 && idx < len(cleaned)-1 {
+		return cleaned[idx+1:]
+	}
+	return fallback
+}
+
+func genericMediaField(method string) (field, kind string, ok bool) {
+	switch method {
+	case "sendDocument":
+		return "document", "document", true
+	case "sendVideo":
+		return "video", "video", true
+	case "sendAnimation":
+		return "animation", "animation", true
+	case "sendAudio":
+		return "audio", "audio", true
+	case "sendVoice":
+		return "voice", "voice", true
+	case "sendVideoNote":
+		return "video_note", "video_note", true
+	case "sendSticker":
+		return "sticker", "sticker", true
+	case "sendLivePhoto":
+		return "live_photo", "live_photo", true
+	default:
+		return "", "", false
 	}
 }
 

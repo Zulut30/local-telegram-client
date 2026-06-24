@@ -586,6 +586,12 @@ h2 {
   font-weight: 700;
   margin-top: 7px;
   padding: 0 8px;
+  text-decoration: none;
+}
+
+a.message__media-kind:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .formatted-text a,

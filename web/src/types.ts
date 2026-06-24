@@ -40,6 +40,13 @@ export interface Message {
   caption_parse_mode?: string;
   photo?: PhotoSize[];
   photo_url?: string;
+  document?: MediaFile;
+  audio?: MediaFile;
+  video?: MediaFile;
+  animation?: MediaFile;
+  voice?: MediaFile;
+  video_note?: MediaFile;
+  sticker?: StickerFile;
   media_kind?: string;
   media_url?: string;
   rich_message?: unknown;
@@ -64,6 +71,28 @@ export interface PhotoSize {
   file_unique_id: string;
   width: number;
   height: number;
+  file_size?: number;
+}
+
+export interface MediaFile {
+  file_id: string;
+  file_unique_id: string;
+  file_name?: string;
+  mime_type?: string;
+  file_size?: number;
+  width?: number;
+  height?: number;
+  duration?: number;
+}
+
+export interface StickerFile {
+  file_id: string;
+  file_unique_id: string;
+  type: string;
+  width: number;
+  height: number;
+  is_animated: boolean;
+  is_video: boolean;
   file_size?: number;
 }
 

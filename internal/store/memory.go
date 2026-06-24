@@ -64,6 +64,13 @@ type BotMessageInput struct {
 	CaptionParseMode string
 	Photo            []tg.PhotoSize
 	PhotoURL         string
+	Document         *tg.FileRef
+	Audio            *tg.FileRef
+	Video            *tg.FileRef
+	Animation        *tg.FileRef
+	Voice            *tg.FileRef
+	VideoNote        *tg.FileRef
+	Sticker          *tg.StickerRef
 	MediaKind        string
 	MediaURL         string
 	RichMessage      json.RawMessage
@@ -298,6 +305,13 @@ func (m *Memory) SaveBotMessage(_ context.Context, input BotMessageInput) (tg.Me
 		CaptionParseMode: input.CaptionParseMode,
 		Photo:            input.Photo,
 		PhotoURL:         input.PhotoURL,
+		Document:         input.Document,
+		Audio:            input.Audio,
+		Video:            input.Video,
+		Animation:        input.Animation,
+		Voice:            input.Voice,
+		VideoNote:        input.VideoNote,
+		Sticker:          input.Sticker,
 		MediaKind:        input.MediaKind,
 		MediaURL:         input.MediaURL,
 		RichMessage:      input.RichMessage,

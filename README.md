@@ -20,8 +20,8 @@ What works today:
 - Local Bot API endpoint compatible with real bot SDKs through `/bot<TOKEN>/<method>`.
 - Stateful polling, webhook delivery, user message injection, callback injection, bot replies,
   edits, deletes, reply markup, media-like messages, and trace correlation.
-- Multipart `sendPhoto` uploads are stored in memory, resolved by `getFile`, and served through
-  `GET /_sim/file/{id}`.
+- Multipart uploads for `sendPhoto` and core single-media methods are stored in memory, resolved by
+  `getFile`, and served through `GET /_sim/file/{id}`.
 - `GET /_sim/coverage` exposes a machine-readable Bot API coverage matrix.
 - `--api-mode=compat|strict` switches between permissive compatibility stubs and explicit errors
   for non-semantic methods.
@@ -114,7 +114,7 @@ Coverage levels:
 | Level | Meaning | Current examples |
 |---|---|---|
 | Stateful | The method changes simulator state, is visible in UI, and is covered by integration tests. | `getUpdates`, webhook methods, `sendMessage`, `sendPhoto`, `getFile`, `editMessageText`, `editMessageReplyMarkup`, `deleteMessage`, `answerCallbackQuery`, `sendChatAction`, `sendMessageDraft`, `sendRichMessage`, `getCustomEmojiStickers` |
-| UI-rendered | The UI can display the result, but Telegram semantics may still be simplified. | entities, custom/premium emoji placeholders, HTML parse mode, rich-message tables, media chips, live typing status, streaming draft previews |
+| UI-rendered | The UI can display the result, but Telegram semantics may still be simplified. | entities, custom/premium emoji placeholders, HTML parse mode, rich-message tables, media chips, single-media uploads, live typing status, streaming draft previews |
 | Compatibility stub | The official method name is accepted and returns deterministic success data so local bots keep running. | lower-priority admin, reaction, profile, sticker-management, and settings methods |
 | Not yet semantic | The method is recognized but does not yet emulate Telegram-side validation, state transitions, events, or edge cases. | payments, invoices, Stars, Mini Apps, inline mode, broad file uploads, business accounts, gifts, forum topics, games |
 
@@ -174,6 +174,8 @@ Progress on `main`:
 
 - Done: multipart `sendPhoto` upload storage, `getFile` lookup, and `GET /_sim/file/{id}` download
   for in-memory files.
+- Done: multipart uploads for `sendDocument`, `sendVideo`, `sendAudio`, `sendAnimation`,
+  `sendVoice`, `sendVideoNote`, and `sendSticker` with Telegram-like response fields.
 
 Definition of Done:
 

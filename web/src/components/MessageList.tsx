@@ -57,9 +57,15 @@ function MessageBody({ message }: { message: Message }) {
   const body = message.text || message.caption;
   const entities = message.text ? message.entities : message.caption_entities;
   const parseMode = message.text ? message.parse_mode : message.caption_parse_mode;
+  const mediaLabel = message.media_kind?.replaceAll('_', ' ');
   return (
     <>
-      {message.media_kind && !message.photo_url ? <div className="message__media-kind">{message.media_kind}</div> : null}
+      {message.media_kind && !message.photo_url && message.media_url ? (
+        <a className="message__media-kind" href={message.media_url} rel="noreferrer" target="_blank">
+          {mediaLabel}
+        </a>
+      ) : null}
+      {message.media_kind && !message.photo_url && !message.media_url ? <div className="message__media-kind">{mediaLabel}</div> : null}
       {message.photo_url ? <img className="message__photo" src={message.photo_url} alt={body || 'Фото Telegram'} /> : null}
       {message.rich_message ? <RichMessageView value={message.rich_message} /> : null}
       {body ? (
