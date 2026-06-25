@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { injectCallback, injectPhoto, injectText, loadState, resetSession } from './api';
+import { withTokenURL } from './token';
 import type {
   CallbackAnswerEventPayload,
   Chat,
@@ -38,6 +39,14 @@ function applyMessage(state: SimState, payload: MessageEventPayload): SimState {
 
 function errorMessage(err: unknown, fallback: string): string {
   return err instanceof Error ? err.message : fallback;
+}
+
+function parseEvent<T>(event: MessageEvent): T | null {
+  try {
+    return JSON.parse(event.data) as T;
+  } catch {
+    return null;
+  }
 }
 
 function withoutChat<T>(items: Record<string, T>, chatID: number): Record<string, T> {
@@ -86,44 +95,73 @@ export function useSimState() {
   }, [refresh]);
 
   useEffect(() => {
-    const source = new EventSource('/_sim/events');
+    const source = new EventSource(withTokenURL('/_sim/events'));
+    const expiryTimers = new Set<number>();
+    let opened = false;
+
+    const scheduleExpiry = (until: number, run: () => void) => {
+      const handle = window.setTimeout(() => {
+        expiryTimers.delete(handle);
+        run();
+      }, Math.max(0, until - Date.now()) + 50);
+      expiryTimers.add(handle);
+    };
+
     source.addEventListener('open', () => {
       setStatus('live');
       setError(null);
+      // On every (re)connect, re-sync the full state so events missed during the
+      // gap (e.g. after a network drop or server write-timeout) are recovered.
+      if (opened) {
+        refresh().catch((err: unknown) => setError(errorMessage(err, 'Не удалось пересинхронизировать состояние')));
+      }
+      opened = true;
     });
     source.addEventListener('error', () => {
       setStatus('offline');
     });
     source.addEventListener('message', (event) => {
-      const payload = JSON.parse(event.data) as MessageEventPayload;
+      const payload = parseEvent<MessageEventPayload>(event);
+      if (!payload) {
+        return;
+      }
       setState((current) => applyMessage(current, payload));
       setChatActions((current) => withoutChat(current, payload.message.chat.id));
       setDrafts((current) => withoutChat(current, payload.message.chat.id));
       setSelectedChatID((current) => current || payload.message.chat.id);
     });
     source.addEventListener('chat_action', (event) => {
-      const payload = JSON.parse(event.data) as ChatActionEventPayload;
+      const payload = parseEvent<ChatActionEventPayload>(event);
+      if (!payload) {
+        return;
+      }
       setChatActions((current) => ({ ...current, [String(payload.chat_id)]: payload }));
-      window.setTimeout(() => {
+      scheduleExpiry(payload.until, () => {
         setChatActions((current) => {
           const active = current[String(payload.chat_id)];
           return active && active.until <= Date.now() ? withoutChat(current, payload.chat_id) : current;
         });
-      }, Math.max(0, payload.until - Date.now()) + 50);
+      });
     });
     source.addEventListener('message_draft', (event) => {
-      const payload = JSON.parse(event.data) as MessageDraftEventPayload;
+      const payload = parseEvent<MessageDraftEventPayload>(event);
+      if (!payload) {
+        return;
+      }
       setDrafts((current) => ({ ...current, [String(payload.chat_id)]: payload }));
       setChatActions((current) => withoutChat(current, payload.chat_id));
-      window.setTimeout(() => {
+      scheduleExpiry(payload.until, () => {
         setDrafts((current) => {
           const active = current[String(payload.chat_id)];
           return active && active.until <= Date.now() ? withoutChat(current, payload.chat_id) : current;
         });
-      }, Math.max(0, payload.until - Date.now()) + 50);
+      });
     });
     source.addEventListener('callback_answer', (event) => {
-      const payload = JSON.parse(event.data) as CallbackAnswerEventPayload;
+      const payload = parseEvent<CallbackAnswerEventPayload>(event);
+      if (!payload) {
+        return;
+      }
       setCallbackNotice(payload.text || 'Callback обработан');
       if (callbackNoticeTimer.current !== null) {
         window.clearTimeout(callbackNoticeTimer.current);
@@ -135,11 +173,14 @@ export function useSimState() {
     });
     return () => {
       source.close();
+      expiryTimers.forEach((handle) => window.clearTimeout(handle));
+      expiryTimers.clear();
       if (callbackNoticeTimer.current !== null) {
         window.clearTimeout(callbackNoticeTimer.current);
+        callbackNoticeTimer.current = null;
       }
     };
-  }, []);
+  }, [refresh]);
 
   useEffect(() => {
     if (state.chats.length > 0 && !state.chats.some((chat) => chat.id === selectedChatID)) {

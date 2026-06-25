@@ -29,10 +29,11 @@ export function Keyboard({ message, markup, onCallback, onReplyText }: KeyboardP
     <div className="keyboard">
       {markup.inline_keyboard?.map((row, rowIndex) => (
         <div className="keyboard__row" key={`inline-${message.message_id}-${rowIndex}`} style={rowStyle(row.length)}>
-          {row.map((button) => {
+          {row.map((button, buttonIndex) => {
+            const key = `inline-${rowIndex}-${buttonIndex}`;
             if (button.url) {
               return (
-                <a className="keyboard__button" href={button.url} key={`${button.text}-${button.url}`} rel="noreferrer" target="_blank">
+                <a className="keyboard__button" href={button.url} key={key} rel="noreferrer" target="_blank">
                   {button.text}
                 </a>
               );
@@ -40,7 +41,7 @@ export function Keyboard({ message, markup, onCallback, onReplyText }: KeyboardP
             return (
               <button
                 className="keyboard__button"
-                key={`${button.text}-${button.callback_data ?? ''}`}
+                key={key}
                 type="button"
                 onClick={() => onCallback(message, button.callback_data ?? button.text)}
               >
@@ -52,8 +53,13 @@ export function Keyboard({ message, markup, onCallback, onReplyText }: KeyboardP
       ))}
       {markup.keyboard?.map((row, rowIndex) => (
         <div className="keyboard__row" key={`reply-${message.message_id}-${rowIndex}`} style={rowStyle(row.length)}>
-          {row.map((button) => (
-            <button className="keyboard__button keyboard__button--reply" key={buttonText(button)} type="button" onClick={() => onReplyText(buttonText(button))}>
+          {row.map((button, buttonIndex) => (
+            <button
+              className="keyboard__button keyboard__button--reply"
+              key={`reply-${rowIndex}-${buttonIndex}`}
+              type="button"
+              onClick={() => onReplyText(buttonText(button))}
+            >
               {buttonText(button)}
             </button>
           ))}

@@ -18,6 +18,7 @@ function readAsDataURL(file: File): Promise<string> {
 export function Composer({ onSend, onPhoto }: ComposerProps) {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
+  const [attachError, setAttachError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -41,11 +42,14 @@ export function Composer({ onSend, onPhoto }: ComposerProps) {
     if (!file || sending) {
       return;
     }
+    setAttachError(null);
     setSending(true);
     try {
       const photoURL = await readAsDataURL(file);
       await onPhoto(photoURL, text.trim());
       setText('');
+    } catch (err) {
+      setAttachError(err instanceof Error ? err.message : 'Не удалось прикрепить фото');
     } finally {
       setSending(false);
     }
@@ -84,6 +88,11 @@ export function Composer({ onSend, onPhoto }: ComposerProps) {
       <button type="submit" disabled={sending || text.trim() === ''}>
         Отправить
       </button>
+      {attachError ? (
+        <span className="composer__error" role="alert">
+          {attachError}
+        </span>
+      ) : null}
     </form>
   );
 }

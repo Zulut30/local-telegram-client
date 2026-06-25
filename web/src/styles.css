@@ -1138,3 +1138,36 @@ a.message__media-kind:hover {
     max-width: min(100%, 680px);
   }
 }
+
+/* Error boundary fallback + composer attach error (added in M1 hardening). */
+.error-boundary {
+  margin: 2rem auto;
+  max-width: 520px;
+  padding: 1.5rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
+.error-boundary__detail {
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+  border-radius: 8px;
+  background: var(--code-bg);
+  color: var(--code-text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.error-boundary__actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.composer__error {
+  flex-basis: 100%;
+  margin-top: 0.35rem;
+  color: #c0392b;
+  font-size: 0.85rem;
+}

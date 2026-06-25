@@ -11,6 +11,10 @@ interface RichMessageViewProps {
   value: unknown;
 }
 
+// Bounds recursion for bot-supplied rich payloads / HTML so a deeply nested or
+// cyclic structure cannot overflow the stack and crash the IDE.
+const MAX_RICH_DEPTH = 24;
+
 export function FormattedText({ text, entities, parseMode }: FormattedTextProps) {
   if (!text) {
     return null;
@@ -25,7 +29,7 @@ export function RichMessageView({ value }: RichMessageViewProps) {
   if (value === null || value === undefined) {
     return null;
   }
-  return <div className="rich-message">{renderRichMessage(value, 'rich-root')}</div>;
+  return <div className="rich-message">{renderRichMessage(value, 'rich-root', 0)}</div>;
 }
 
 function renderEntities(text: string, entities: MessageEntity[]): ReactNode[] {
@@ -86,18 +90,18 @@ function RichHtmlContent({ html }: { html: string }) {
     return <>{html}</>;
   }
   const doc = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
-  return <>{Array.from(doc.body.childNodes).map((node, index) => renderHTMLNode(node, `html-${index}`))}</>;
+  return <>{Array.from(doc.body.childNodes).map((node, index) => renderHTMLNode(node, `html-${index}`, 0))}</>;
 }
 
-function renderHTMLNode(node: ChildNode, key: string): ReactNode {
+function renderHTMLNode(node: ChildNode, key: string, depth: number): ReactNode {
   if (node.nodeType === Node.TEXT_NODE) {
     return node.textContent;
   }
-  if (node.nodeType !== Node.ELEMENT_NODE) {
-    return null;
+  if (node.nodeType !== Node.ELEMENT_NODE || depth >= MAX_RICH_DEPTH) {
+    return node.nodeType === Node.ELEMENT_NODE ? node.textContent : null;
   }
   const element = node as Element;
-  const children = Array.from(element.childNodes).map((child, index) => renderHTMLNode(child, `${key}-${index}`));
+  const children = Array.from(element.childNodes).map((child, index) => renderHTMLNode(child, `${key}-${index}`, depth + 1));
   switch (element.tagName.toLowerCase()) {
     case 'b':
     case 'strong':
@@ -147,12 +151,15 @@ function renderHTMLNode(node: ChildNode, key: string): ReactNode {
   }
 }
 
-function renderRichMessage(value: unknown, key: string): ReactNode {
+function renderRichMessage(value: unknown, key: string, depth: number): ReactNode {
   if (typeof value === 'string' || typeof value === 'number') {
     return String(value);
   }
+  if (depth >= MAX_RICH_DEPTH) {
+    return plainRichText(value, depth);
+  }
   if (Array.isArray(value)) {
-    return value.map((item, index) => renderRichMessage(item, `${key}-${index}`));
+    return value.map((item, index) => renderRichMessage(item, `${key}-${index}`, depth + 1));
   }
   if (!isRecord(value)) {
     return null;
@@ -161,17 +168,20 @@ function renderRichMessage(value: unknown, key: string): ReactNode {
     return <RichHtmlContent html={value.html} />;
   }
   if (Array.isArray(value.blocks)) {
-    return value.blocks.map((block, index) => renderRichBlock(block, `${key}-block-${index}`));
+    return value.blocks.map((block, index) => renderRichBlock(block, `${key}-block-${index}`, depth + 1));
   }
   if ('text' in value) {
-    return renderRichText(value, key);
+    return renderRichText(value, key, depth + 1);
   }
   return <pre className="rich-message__json">{JSON.stringify(value, null, 2)}</pre>;
 }
 
-function renderRichBlock(value: unknown, key: string): ReactNode {
+function renderRichBlock(value: unknown, key: string, depth: number): ReactNode {
+  if (depth >= MAX_RICH_DEPTH) {
+    return <p key={key}>{plainRichText(value, depth)}</p>;
+  }
   if (!isRecord(value)) {
-    return <p key={key}>{renderRichText(value, `${key}-text`)}</p>;
+    return <p key={key}>{renderRichText(value, `${key}-text`, depth + 1)}</p>;
   }
   const type = String(value.type ?? 'paragraph');
   if (type === 'table') {
@@ -182,7 +192,7 @@ function renderRichBlock(value: unknown, key: string): ReactNode {
           {rows.map((row, rowIndex) => (
             <tr key={`${key}-row-${rowIndex}`}>
               {(Array.isArray(row) ? row : []).map((cell, cellIndex) => (
-                <td key={`${key}-cell-${rowIndex}-${cellIndex}`}>{renderRichText(cell, `${key}-cell-text-${rowIndex}-${cellIndex}`)}</td>
+                <td key={`${key}-cell-${rowIndex}-${cellIndex}`}>{renderRichText(cell, `${key}-cell-text-${rowIndex}-${cellIndex}`, depth + 1)}</td>
               ))}
             </tr>
           ))}
@@ -191,33 +201,36 @@ function renderRichBlock(value: unknown, key: string): ReactNode {
     );
   }
   if (type === 'section_heading') {
-    return <h3 key={key}>{renderRichText(value.text ?? value, `${key}-heading`)}</h3>;
+    return <h3 key={key}>{renderRichText(value.text ?? value, `${key}-heading`, depth + 1)}</h3>;
   }
   if (type === 'preformatted') {
-    return <pre key={key}>{plainRichText(value.text ?? value)}</pre>;
+    return <pre key={key}>{plainRichText(value.text ?? value, depth + 1)}</pre>;
   }
   if (type === 'divider') {
     return <hr key={key} />;
   }
   if (type === 'list') {
     const items = Array.isArray(value.items) ? value.items : [];
-    return <ul key={key}>{items.map((item, index) => <li key={`${key}-item-${index}`}>{renderRichText(item, `${key}-item-text-${index}`)}</li>)}</ul>;
+    return <ul key={key}>{items.map((item, index) => <li key={`${key}-item-${index}`}>{renderRichText(item, `${key}-item-text-${index}`, depth + 1)}</li>)}</ul>;
   }
   if (type === 'block_quote' || type === 'pull_quote') {
-    return <blockquote key={key}>{renderRichText(value.text ?? value, `${key}-quote`)}</blockquote>;
+    return <blockquote key={key}>{renderRichText(value.text ?? value, `${key}-quote`, depth + 1)}</blockquote>;
   }
   if (type === 'thinking') {
     return <p className="rich-message__thinking" key={key}>Думаю...</p>;
   }
-  return <p key={key}>{renderRichText(value.text ?? value.caption ?? value, `${key}-paragraph`)}</p>;
+  return <p key={key}>{renderRichText(value.text ?? value.caption ?? value, `${key}-paragraph`, depth + 1)}</p>;
 }
 
-function renderRichText(value: unknown, key: string): ReactNode {
+function renderRichText(value: unknown, key: string, depth: number): ReactNode {
   if (typeof value === 'string' || typeof value === 'number') {
     return String(value);
   }
+  if (depth >= MAX_RICH_DEPTH) {
+    return plainRichText(value, depth);
+  }
   if (Array.isArray(value)) {
-    return value.map((item, index) => renderRichText(item, `${key}-${index}`));
+    return value.map((item, index) => renderRichText(item, `${key}-${index}`, depth + 1));
   }
   if (!isRecord(value)) {
     return null;
@@ -227,7 +240,7 @@ function renderRichText(value: unknown, key: string): ReactNode {
     return <CustomEmoji id={stringField(value, 'custom_emoji_id')} key={key} text={stringField(value, 'alternative_text') || '✨'} />;
   }
   const textValue = value.text ?? value.children ?? value.content ?? '';
-  const child = renderRichText(textValue, `${key}-child`);
+  const child = renderRichText(textValue, `${key}-child`, depth + 1);
   switch (type) {
     case 'bold':
       return <strong key={key}>{child}</strong>;
@@ -248,15 +261,18 @@ function renderRichText(value: unknown, key: string): ReactNode {
   }
 }
 
-function plainRichText(value: unknown): string {
+function plainRichText(value: unknown, depth = 0): string {
   if (typeof value === 'string' || typeof value === 'number') {
     return String(value);
   }
+  if (depth >= MAX_RICH_DEPTH) {
+    return '';
+  }
   if (Array.isArray(value)) {
-    return value.map(plainRichText).join('');
+    return value.map((item) => plainRichText(item, depth + 1)).join('');
   }
   if (isRecord(value)) {
-    return plainRichText(value.text ?? value.children ?? value.content ?? value.alternative_text ?? '');
+    return plainRichText(value.text ?? value.children ?? value.content ?? value.alternative_text ?? '', depth + 1);
   }
   return '';
 }

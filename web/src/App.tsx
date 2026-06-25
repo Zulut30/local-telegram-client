@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChatList } from './components/ChatList';
 import { Composer } from './components/Composer';
 import { MessageList } from './components/MessageList';
@@ -12,7 +12,21 @@ export function App() {
   const traceState = useTraceState();
   const [resetting, setResetting] = useState(false);
   const [clearingTraces, setClearingTraces] = useState(false);
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    try {
+      return window.localStorage.getItem('sim-theme') === 'dark' ? 'dark' : 'light';
+    } catch {
+      return 'light';
+    }
+  });
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('sim-theme', theme);
+    } catch {
+      /* localStorage may be unavailable; theme simply won't persist */
+    }
+  }, [theme]);
   const [showChats, setShowChats] = useState(true);
   const [showControls, setShowControls] = useState(true);
   const [showConsole, setShowConsole] = useState(true);

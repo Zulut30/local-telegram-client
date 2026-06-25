@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { clearTraces, loadTraces } from './api';
+import { withTokenURL } from './token';
 import type { Trace, TraceEventPayload } from './types';
 
 const maxTraces = 1000;
@@ -29,13 +30,26 @@ export function useTraceState() {
   }, [refresh]);
 
   useEffect(() => {
-    const source = new EventSource('/_sim/events');
+    const source = new EventSource(withTokenURL('/_sim/events'));
+    let opened = false;
+    source.addEventListener('open', () => {
+      // Re-sync the trace ring on reconnect so nothing is lost across the gap.
+      if (opened) {
+        refresh().catch(() => undefined);
+      }
+      opened = true;
+    });
     source.addEventListener('trace', (event) => {
-      const payload = JSON.parse(event.data) as TraceEventPayload;
+      let payload: TraceEventPayload;
+      try {
+        payload = JSON.parse(event.data) as TraceEventPayload;
+      } catch {
+        return;
+      }
       setTraces((current) => upsertTrace(current, payload.trace));
     });
     return () => source.close();
-  }, []);
+  }, [refresh]);
 
   return { traces, refresh, clear };
 }
