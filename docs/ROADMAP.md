@@ -103,6 +103,8 @@ subtly wrong. Each item references the audit finding.
 - [x] SSRF guard: in remote mode, `setWebhook` rejects URLs resolving to
   private/loopback/link-local addresses unless `--allow-private-webhooks` is set (F19, pulled
   forward from M6).
+- [x] `sendMediaGroup` items share a `media_group_id` (F34 backend half; UI album rendering
+  remains in M4).
 
 **Tests (P2)**
 

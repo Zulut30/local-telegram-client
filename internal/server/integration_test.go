@@ -204,6 +204,28 @@ func TestSetWebhookSSRFGuard(t *testing.T) {
 	botCall(t, srvLocal.URL, botToken, "setWebhook", map[string]any{"url": "http://127.0.0.1:8090/webhook"}, http.StatusOK)
 }
 
+func TestSendMediaGroupSharesMediaGroupID(t *testing.T) {
+	st := store.NewMemory()
+	cfg := config.Config{Mode: config.ModeLocal, BotToken: "1234567890:aaaabbbbaaaabbbbaaaabbbbaaaabbbbccc", BufferSize: 50}
+	srv := httptest.NewServer(NewWithStore(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), st))
+	t.Cleanup(srv.Close)
+
+	env := botCall(t, srv.URL, cfg.BotToken, "sendMediaGroup", map[string]any{
+		"chat_id": 42,
+		"media": []map[string]any{
+			{"type": "photo", "media": "https://example.test/a.jpg"},
+			{"type": "photo", "media": "https://example.test/b.jpg"},
+		},
+	}, http.StatusOK)
+	messages := decodeBotResult[[]tg.Message](t, env)
+	if len(messages) != 2 {
+		t.Fatalf("want 2 messages, got %d", len(messages))
+	}
+	if messages[0].MediaGroupID == "" || messages[0].MediaGroupID != messages[1].MediaGroupID {
+		t.Fatalf("media_group_id should be shared and non-empty: %q vs %q", messages[0].MediaGroupID, messages[1].MediaGroupID)
+	}
+}
+
 func TestSendMessageReplyParameters(t *testing.T) {
 	st := store.NewMemory()
 	cfg := config.Config{Mode: config.ModeLocal, BotToken: "1234567890:aaaabbbbaaaabbbbaaaabbbbaaaabbbbccc", BufferSize: 50}

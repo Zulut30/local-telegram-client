@@ -743,6 +743,7 @@ func (h *Handler) handleSendMediaGroup(w http.ResponseWriter, r *http.Request, p
 		writeError(w, http.StatusBadRequest, 400, "media must be a JSON array")
 		return
 	}
+	groupID := mediaGroupID(chatID, mediaRaw)
 	out := make([]tg.Message, 0, len(media))
 	for index, item := range media {
 		kind := stringFromAny(item["type"], "media")
@@ -752,11 +753,12 @@ func (h *Handler) handleSendMediaGroup(w http.ResponseWriter, r *http.Request, p
 			caption = fmt.Sprintf("%s #%d", methodHumanLabel(kind), index+1)
 		}
 		msg, err := h.store.SaveBotMessage(r.Context(), store.BotMessageInput{
-			From:      h.bot,
-			ChatID:    chatID,
-			Caption:   caption,
-			MediaKind: kind,
-			MediaURL:  urlValue,
+			From:         h.bot,
+			ChatID:       chatID,
+			Caption:      caption,
+			MediaKind:    kind,
+			MediaURL:     urlValue,
+			MediaGroupID: groupID,
 		})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, 500, err.Error())
@@ -1297,6 +1299,14 @@ func stickerForFile(ref tg.FileRef) *tg.StickerRef {
 		IsVideo:      false,
 		FileSize:     ref.FileSize,
 	}
+}
+
+func mediaGroupID(chatID int64, mediaRaw []byte) string {
+	hash := fnv.New64a()
+	_, _ = hash.Write([]byte(strconv.FormatInt(chatID, 10)))
+	_, _ = hash.Write([]byte{0})
+	_, _ = hash.Write(mediaRaw)
+	return fmt.Sprintf("mg_%016x", hash.Sum64())
 }
 
 func deterministicMediaID(kind, value string) string {

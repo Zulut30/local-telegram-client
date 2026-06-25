@@ -45,6 +45,7 @@ type Message struct {
 	Sticker              *StickerRef     `json:"sticker,omitempty"`
 	MediaKind            string          `json:"media_kind,omitempty"`
 	MediaURL             string          `json:"media_url,omitempty"`
+	MediaGroupID         string          `json:"media_group_id,omitempty"`
 	RichMessage          json.RawMessage `json:"rich_message,omitempty"`
 	ReplyMarkup          json.RawMessage `json:"reply_markup,omitempty"`
 }

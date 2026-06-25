@@ -78,6 +78,7 @@ type BotMessageInput struct {
 	Sticker              *tg.StickerRef
 	MediaKind            string
 	MediaURL             string
+	MediaGroupID         string
 	RichMessage          json.RawMessage
 	ReplyMarkup          json.RawMessage
 	ReplyToMessageID     int64
@@ -341,6 +342,7 @@ func (m *Memory) SaveBotMessage(_ context.Context, input BotMessageInput) (tg.Me
 		Sticker:              input.Sticker,
 		MediaKind:            input.MediaKind,
 		MediaURL:             input.MediaURL,
+		MediaGroupID:         input.MediaGroupID,
 		RichMessage:          input.RichMessage,
 		ReplyMarkup:          input.ReplyMarkup,
 	}

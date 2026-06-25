@@ -118,7 +118,7 @@ var statefulCoverageNotes = map[string]string{
 	"sendMessageDraft":       "broadcasts a temporary typing draft event to the browser UI",
 	"sendRichMessageDraft":   "broadcasts a temporary rich-message draft event to the browser UI",
 	"sendChatAction":         "broadcasts a temporary chat action such as typing or upload_photo",
-	"sendMediaGroup":         "stores a simplified group of media-like bot messages",
+	"sendMediaGroup":         "stores a group of media-like bot messages sharing a media_group_id",
 	"copyMessage":            "creates a simplified copied message and returns its message_id",
 	"editMessageText":        "edits stored bot messages and broadcasts an edit event",
 	"editMessageCaption":     "edits a stored message caption and returns the updated Message",
