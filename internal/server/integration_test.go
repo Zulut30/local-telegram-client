@@ -104,6 +104,81 @@ func TestBotAPILongPollFlowWithTelego(t *testing.T) {
 	}
 }
 
+func TestBotAPIFidelityEditsRepliesAndFilters(t *testing.T) {
+	st := store.NewMemory()
+	cfg := config.Config{Mode: config.ModeLocal, BotToken: "1234567890:aaaabbbbaaaabbbbaaaabbbbaaaabbbbccc", BufferSize: 100}
+	handler := NewWithStore(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), st)
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+
+	// Base message to reply to and to caption-edit.
+	baseEnv := botCall(t, srv.URL, cfg.BotToken, "sendMessage", map[string]any{
+		"chat_id": 42,
+		"text":    "question",
+	}, http.StatusOK)
+	base := decodeBotResult[tg.Message](t, baseEnv)
+
+	// reply_to_message_id should be resolved into a nested reply_to_message.
+	replyEnv := botCall(t, srv.URL, cfg.BotToken, "sendMessage", map[string]any{
+		"chat_id":             42,
+		"text":                "answer",
+		"reply_to_message_id": base.MessageID,
+		"message_thread_id":   99,
+	}, http.StatusOK)
+	reply := decodeBotResult[tg.Message](t, replyEnv)
+	if reply.ReplyToMessage == nil || reply.ReplyToMessage.Text != "question" {
+		t.Fatalf("reply_to_message not populated: %+v", reply.ReplyToMessage)
+	}
+	if reply.MessageThreadID != 99 {
+		t.Fatalf("message_thread_id = %d, want 99", reply.MessageThreadID)
+	}
+
+	// editMessageCaption must return a full Message, not bare true.
+	capEnv := botCall(t, srv.URL, cfg.BotToken, "editMessageCaption", map[string]any{
+		"chat_id":    42,
+		"message_id": base.MessageID,
+		"caption":    "Updated caption",
+	}, http.StatusOK)
+	edited := decodeBotResult[tg.Message](t, capEnv)
+	if edited.Caption != "Updated caption" {
+		t.Fatalf("editMessageCaption caption = %q, want Updated caption", edited.Caption)
+	}
+
+	// Inline edits (inline_message_id) return true, since no chat message is owned.
+	inlineEnv := botCall(t, srv.URL, cfg.BotToken, "editMessageText", map[string]any{
+		"inline_message_id": "inline_abc",
+		"text":              "x",
+	}, http.StatusOK)
+	var inlineOK bool
+	if err := json.Unmarshal(inlineEnv.Result, &inlineOK); err != nil || !inlineOK {
+		t.Fatalf("inline edit result = %s (err %v), want true", inlineEnv.Result, err)
+	}
+
+	// allowed_updates filters out message updates when only callback_query is requested.
+	injectBody := bytes.NewBufferString(`{"type":"message","chat_id":7,"text":"hi"}`)
+	resp, err := http.Post(srv.URL+"/_sim/inject", "application/json", injectBody)
+	if err != nil {
+		t.Fatalf("inject: %v", err)
+	}
+	resp.Body.Close()
+
+	filteredEnv := botCall(t, srv.URL, cfg.BotToken, "getUpdates", map[string]any{
+		"allowed_updates": []string{"callback_query"},
+	}, http.StatusOK)
+	filtered := decodeBotResult[[]tg.Update](t, filteredEnv)
+	if len(filtered) != 0 {
+		t.Fatalf("allowed_updates=callback_query should hide message updates, got %d", len(filtered))
+	}
+
+	allEnv := botCall(t, srv.URL, cfg.BotToken, "getUpdates", map[string]any{
+		"allowed_updates": []string{"message"},
+	}, http.StatusOK)
+	all := decodeBotResult[[]tg.Update](t, allEnv)
+	if len(all) != 1 {
+		t.Fatalf("allowed_updates=message should return the message, got %d", len(all))
+	}
+}
+
 func TestBotAPIMessageMutationsAndCallbackAnswerEvents(t *testing.T) {
 	st := store.NewMemory()
 	cfg := config.Config{Mode: config.ModeLocal, BotToken: "1234567890:aaaabbbbaaaabbbbaaaabbbbaaaabbbbccc", BufferSize: 100}

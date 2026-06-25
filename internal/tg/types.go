@@ -20,29 +20,33 @@ type Chat struct {
 }
 
 type Message struct {
-	MessageID        int64           `json:"message_id"`
-	From             *User           `json:"from,omitempty"`
-	Chat             Chat            `json:"chat"`
-	Date             int64           `json:"date"`
-	Text             string          `json:"text,omitempty"`
-	Entities         []MessageEntity `json:"entities,omitempty"`
-	ParseMode        string          `json:"parse_mode,omitempty"`
-	Caption          string          `json:"caption,omitempty"`
-	CaptionEntities  []MessageEntity `json:"caption_entities,omitempty"`
-	CaptionParseMode string          `json:"caption_parse_mode,omitempty"`
-	Photo            []PhotoSize     `json:"photo,omitempty"`
-	PhotoURL         string          `json:"photo_url,omitempty"`
-	Document         *FileRef        `json:"document,omitempty"`
-	Audio            *FileRef        `json:"audio,omitempty"`
-	Video            *FileRef        `json:"video,omitempty"`
-	Animation        *FileRef        `json:"animation,omitempty"`
-	Voice            *FileRef        `json:"voice,omitempty"`
-	VideoNote        *FileRef        `json:"video_note,omitempty"`
-	Sticker          *StickerRef     `json:"sticker,omitempty"`
-	MediaKind        string          `json:"media_kind,omitempty"`
-	MediaURL         string          `json:"media_url,omitempty"`
-	RichMessage      json.RawMessage `json:"rich_message,omitempty"`
-	ReplyMarkup      json.RawMessage `json:"reply_markup,omitempty"`
+	MessageID            int64           `json:"message_id"`
+	MessageThreadID      int64           `json:"message_thread_id,omitempty"`
+	BusinessConnectionID string          `json:"business_connection_id,omitempty"`
+	From                 *User           `json:"from,omitempty"`
+	Chat                 Chat            `json:"chat"`
+	Date                 int64           `json:"date"`
+	ReplyToMessage       *Message        `json:"reply_to_message,omitempty"`
+	LinkPreviewOptions   json.RawMessage `json:"link_preview_options,omitempty"`
+	Text                 string          `json:"text,omitempty"`
+	Entities             []MessageEntity `json:"entities,omitempty"`
+	ParseMode            string          `json:"parse_mode,omitempty"`
+	Caption              string          `json:"caption,omitempty"`
+	CaptionEntities      []MessageEntity `json:"caption_entities,omitempty"`
+	CaptionParseMode     string          `json:"caption_parse_mode,omitempty"`
+	Photo                []PhotoSize     `json:"photo,omitempty"`
+	PhotoURL             string          `json:"photo_url,omitempty"`
+	Document             *FileRef        `json:"document,omitempty"`
+	Audio                *FileRef        `json:"audio,omitempty"`
+	Video                *FileRef        `json:"video,omitempty"`
+	Animation            *FileRef        `json:"animation,omitempty"`
+	Voice                *FileRef        `json:"voice,omitempty"`
+	VideoNote            *FileRef        `json:"video_note,omitempty"`
+	Sticker              *StickerRef     `json:"sticker,omitempty"`
+	MediaKind            string          `json:"media_kind,omitempty"`
+	MediaURL             string          `json:"media_url,omitempty"`
+	RichMessage          json.RawMessage `json:"rich_message,omitempty"`
+	ReplyMarkup          json.RawMessage `json:"reply_markup,omitempty"`
 }
 
 type PhotoSize struct {

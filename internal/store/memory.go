@@ -21,6 +21,8 @@ type Store interface {
 	AckUpdates(ctx context.Context, offset int64) error
 	SaveBotMessage(ctx context.Context, input BotMessageInput) (tg.Message, error)
 	EditMessageText(ctx context.Context, input EditMessageTextInput) (tg.Message, error)
+	EditMessageCaption(ctx context.Context, input EditMessageCaptionInput) (tg.Message, error)
+	EditMessageMedia(ctx context.Context, input EditMessageMediaInput) (tg.Message, error)
 	EditMessageReplyMarkup(ctx context.Context, input EditMessageReplyMarkupInput) (tg.Message, error)
 	DeleteMessage(ctx context.Context, chatID, messageID int64) (tg.Message, error)
 	State(ctx context.Context) (State, error)
@@ -54,28 +56,31 @@ type CallbackInput struct {
 }
 
 type BotMessageInput struct {
-	From             tg.User
-	ChatID           int64
-	Text             string
-	Entities         []tg.MessageEntity
-	ParseMode        string
-	Caption          string
-	CaptionEntities  []tg.MessageEntity
-	CaptionParseMode string
-	Photo            []tg.PhotoSize
-	PhotoURL         string
-	Document         *tg.FileRef
-	Audio            *tg.FileRef
-	Video            *tg.FileRef
-	Animation        *tg.FileRef
-	Voice            *tg.FileRef
-	VideoNote        *tg.FileRef
-	Sticker          *tg.StickerRef
-	MediaKind        string
-	MediaURL         string
-	RichMessage      json.RawMessage
-	ReplyMarkup      json.RawMessage
-	ReplyToMessageID int64
+	From                 tg.User
+	ChatID               int64
+	MessageThreadID      int64
+	BusinessConnectionID string
+	LinkPreviewOptions   json.RawMessage
+	Text                 string
+	Entities             []tg.MessageEntity
+	ParseMode            string
+	Caption              string
+	CaptionEntities      []tg.MessageEntity
+	CaptionParseMode     string
+	Photo                []tg.PhotoSize
+	PhotoURL             string
+	Document             *tg.FileRef
+	Audio                *tg.FileRef
+	Video                *tg.FileRef
+	Animation            *tg.FileRef
+	Voice                *tg.FileRef
+	VideoNote            *tg.FileRef
+	Sticker              *tg.StickerRef
+	MediaKind            string
+	MediaURL             string
+	RichMessage          json.RawMessage
+	ReplyMarkup          json.RawMessage
+	ReplyToMessageID     int64
 }
 
 type EditMessageTextInput struct {
@@ -91,6 +96,24 @@ type EditMessageTextInput struct {
 type EditMessageReplyMarkupInput struct {
 	ChatID      int64
 	MessageID   int64
+	ReplyMarkup json.RawMessage
+}
+
+type EditMessageCaptionInput struct {
+	ChatID           int64
+	MessageID        int64
+	Caption          string
+	CaptionEntities  []tg.MessageEntity
+	CaptionParseMode string
+	ReplyMarkup      json.RawMessage
+}
+
+type EditMessageMediaInput struct {
+	ChatID      int64
+	MessageID   int64
+	MediaKind   string
+	MediaURL    string
+	Caption     string
 	ReplyMarkup json.RawMessage
 }
 
@@ -293,29 +316,33 @@ func (m *Memory) SaveBotMessage(_ context.Context, input BotMessageInput) (tg.Me
 
 	chat := m.chatLocked(input.ChatID, "", "")
 	msg := tg.Message{
-		MessageID:        m.nextMessageID,
-		From:             &input.From,
-		Chat:             chat,
-		Date:             time.Now().Unix(),
-		Text:             input.Text,
-		Entities:         input.Entities,
-		ParseMode:        input.ParseMode,
-		Caption:          input.Caption,
-		CaptionEntities:  input.CaptionEntities,
-		CaptionParseMode: input.CaptionParseMode,
-		Photo:            input.Photo,
-		PhotoURL:         input.PhotoURL,
-		Document:         input.Document,
-		Audio:            input.Audio,
-		Video:            input.Video,
-		Animation:        input.Animation,
-		Voice:            input.Voice,
-		VideoNote:        input.VideoNote,
-		Sticker:          input.Sticker,
-		MediaKind:        input.MediaKind,
-		MediaURL:         input.MediaURL,
-		RichMessage:      input.RichMessage,
-		ReplyMarkup:      input.ReplyMarkup,
+		MessageID:            m.nextMessageID,
+		MessageThreadID:      input.MessageThreadID,
+		BusinessConnectionID: input.BusinessConnectionID,
+		LinkPreviewOptions:   input.LinkPreviewOptions,
+		ReplyToMessage:       m.replyTargetLocked(chat.ID, input.ReplyToMessageID),
+		From:                 &input.From,
+		Chat:                 chat,
+		Date:                 time.Now().Unix(),
+		Text:                 input.Text,
+		Entities:             input.Entities,
+		ParseMode:            input.ParseMode,
+		Caption:              input.Caption,
+		CaptionEntities:      input.CaptionEntities,
+		CaptionParseMode:     input.CaptionParseMode,
+		Photo:                input.Photo,
+		PhotoURL:             input.PhotoURL,
+		Document:             input.Document,
+		Audio:                input.Audio,
+		Video:                input.Video,
+		Animation:            input.Animation,
+		Voice:                input.Voice,
+		VideoNote:            input.VideoNote,
+		Sticker:              input.Sticker,
+		MediaKind:            input.MediaKind,
+		MediaURL:             input.MediaURL,
+		RichMessage:          input.RichMessage,
+		ReplyMarkup:          input.ReplyMarkup,
 	}
 	if len(msg.Photo) == 0 && msg.PhotoURL != "" {
 		msg.Photo = photoSizes(msg.PhotoURL)
@@ -338,7 +365,55 @@ func (m *Memory) EditMessageText(_ context.Context, input EditMessageTextInput) 
 	msg.Text = input.Text
 	msg.Entities = input.Entities
 	msg.ParseMode = input.ParseMode
-	msg.RichMessage = input.RichMessage
+	// Only replace the rich-message payload when the edit actually carries one,
+	// so a plain-text edit does not silently wipe an existing rich message.
+	if len(input.RichMessage) > 0 {
+		msg.RichMessage = input.RichMessage
+	}
+	if input.ReplyMarkup != nil {
+		msg.ReplyMarkup = input.ReplyMarkup
+	}
+	m.signalLocked()
+	return *msg, nil
+}
+
+func (m *Memory) EditMessageCaption(_ context.Context, input EditMessageCaptionInput) (tg.Message, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	msg, ok := m.messageRefLocked(input.ChatID, input.MessageID)
+	if !ok {
+		return tg.Message{}, ErrMessageNotFound
+	}
+	msg.Caption = input.Caption
+	msg.CaptionEntities = input.CaptionEntities
+	msg.CaptionParseMode = input.CaptionParseMode
+	if input.ReplyMarkup != nil {
+		msg.ReplyMarkup = input.ReplyMarkup
+	}
+	m.signalLocked()
+	return *msg, nil
+}
+
+func (m *Memory) EditMessageMedia(_ context.Context, input EditMessageMediaInput) (tg.Message, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	msg, ok := m.messageRefLocked(input.ChatID, input.MessageID)
+	if !ok {
+		return tg.Message{}, ErrMessageNotFound
+	}
+	if input.MediaKind != "" {
+		msg.MediaKind = input.MediaKind
+	}
+	if input.MediaURL != "" {
+		msg.MediaURL = input.MediaURL
+		msg.PhotoURL = input.MediaURL
+		msg.Photo = photoSizes(input.MediaURL)
+	}
+	if input.Caption != "" {
+		msg.Caption = input.Caption
+	}
 	if input.ReplyMarkup != nil {
 		msg.ReplyMarkup = input.ReplyMarkup
 	}
@@ -436,6 +511,23 @@ func (m *Memory) messageLocked(chatID, messageID int64) *tg.Message {
 	for _, msg := range messages {
 		if msg.MessageID == messageID {
 			found := msg
+			return &found
+		}
+	}
+	return nil
+}
+
+// replyTargetLocked resolves reply_to_message_id to a copy of the referenced
+// message so the returned Message embeds full reply context, matching Telegram.
+// The embedded copy's own ReplyToMessage is cleared to avoid unbounded nesting.
+func (m *Memory) replyTargetLocked(chatID, replyToMessageID int64) *tg.Message {
+	if replyToMessageID == 0 {
+		return nil
+	}
+	for _, msg := range m.messages[chatID] {
+		if msg.MessageID == replyToMessageID {
+			found := msg
+			found.ReplyToMessage = nil
 			return &found
 		}
 	}

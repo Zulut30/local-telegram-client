@@ -121,6 +121,8 @@ var statefulCoverageNotes = map[string]string{
 	"sendMediaGroup":         "stores a simplified group of media-like bot messages",
 	"copyMessage":            "creates a simplified copied message and returns its message_id",
 	"editMessageText":        "edits stored bot messages and broadcasts an edit event",
+	"editMessageCaption":     "edits a stored message caption and returns the updated Message",
+	"editMessageMedia":       "edits a stored message's media/caption and returns the updated Message",
 	"editMessageReplyMarkup": "edits stored reply markup and broadcasts an edit event",
 	"deleteMessage":          "deletes a stored message and broadcasts a delete event",
 	"deleteMessages":         "deletes stored messages and broadcasts delete events for found messages",

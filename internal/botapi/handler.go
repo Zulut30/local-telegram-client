@@ -134,6 +134,10 @@ func (h *Handler) dispatch(w http.ResponseWriter, r *http.Request, method string
 		h.handleMessageIDList(w, method, params)
 	case "editMessageText":
 		h.handleEditMessageText(w, r, params)
+	case "editMessageCaption":
+		h.handleEditMessageCaption(w, r, params)
+	case "editMessageMedia":
+		h.handleEditMessageMedia(w, r, params)
 	case "editMessageReplyMarkup":
 		h.handleEditMessageReplyMarkup(w, r, params)
 	case "deleteMessage":
@@ -241,10 +245,42 @@ func (h *Handler) handleGetUpdates(w http.ResponseWriter, r *http.Request, param
 		writeError(w, http.StatusInternalServerError, 500, err.Error())
 		return
 	}
+	allowed, _ := params.StringSlice("allowed_updates")
+	updates = filterAllowedUpdates(updates, allowed)
 	if h.recorder != nil {
 		h.recorder.OpenForUpdates(updates)
 	}
 	writeOK(w, updates)
+}
+
+// filterAllowedUpdates honors the getUpdates allowed_updates parameter. An empty
+// or nil list means "all update types" (Telegram's documented default).
+func filterAllowedUpdates(updates []tg.Update, allowed []string) []tg.Update {
+	if len(allowed) == 0 {
+		return updates
+	}
+	want := make(map[string]struct{}, len(allowed))
+	for _, name := range allowed {
+		want[name] = struct{}{}
+	}
+	out := make([]tg.Update, 0, len(updates))
+	for _, update := range updates {
+		if _, ok := want[updateType(update)]; ok {
+			out = append(out, update)
+		}
+	}
+	return out
+}
+
+func updateType(update tg.Update) string {
+	switch {
+	case update.Message != nil:
+		return "message"
+	case update.CallbackQuery != nil:
+		return "callback_query"
+	default:
+		return ""
+	}
 }
 
 func (h *Handler) handleSetWebhook(w http.ResponseWriter, r *http.Request, params parameters) {
@@ -335,15 +371,25 @@ func (h *Handler) handleSendMessage(w http.ResponseWriter, r *http.Request, para
 		return
 	}
 	parseMode, _ := params.String("parse_mode", "")
+	linkPreview, err := params.RawJSON("link_preview_options")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, 400, "link_preview_options must be valid JSON")
+		return
+	}
+	threadID, _ := params.Int64("message_thread_id", 0)
+	businessConnID, _ := params.String("business_connection_id", "")
 
 	msg, err := h.store.SaveBotMessage(r.Context(), store.BotMessageInput{
-		From:             h.bot,
-		ChatID:           chatID,
-		Text:             text,
-		Entities:         entities,
-		ParseMode:        parseMode,
-		ReplyMarkup:      replyMarkup,
-		ReplyToMessageID: replyToMessageID,
+		From:                 h.bot,
+		ChatID:               chatID,
+		MessageThreadID:      threadID,
+		BusinessConnectionID: businessConnID,
+		LinkPreviewOptions:   linkPreview,
+		Text:                 text,
+		Entities:             entities,
+		ParseMode:            parseMode,
+		ReplyMarkup:          replyMarkup,
+		ReplyToMessageID:     replyToMessageID,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, 500, err.Error())
@@ -815,7 +861,23 @@ func validChatAction(action string) bool {
 	}
 }
 
+// handledInlineEdit answers edit*/stop* calls that target an inline message via
+// inline_message_id. Real Telegram returns True (not a Message) for those, since
+// the bot does not own a chat message. The simulator does not store inline
+// messages, so it acknowledges without mutating state.
+func (h *Handler) handledInlineEdit(w http.ResponseWriter, params parameters) bool {
+	inlineID, _ := params.String("inline_message_id", "")
+	if inlineID == "" {
+		return false
+	}
+	writeOK(w, true)
+	return true
+}
+
 func (h *Handler) handleEditMessageText(w http.ResponseWriter, r *http.Request, params parameters) {
+	if h.handledInlineEdit(w, params) {
+		return
+	}
 	chatID, err := params.ChatIDValue("chat_id", 0)
 	if err != nil || chatID == 0 {
 		writeError(w, http.StatusBadRequest, 400, "chat_id is required")
@@ -865,7 +927,98 @@ func (h *Handler) handleEditMessageText(w http.ResponseWriter, r *http.Request, 
 	writeOK(w, msg)
 }
 
+func (h *Handler) handleEditMessageCaption(w http.ResponseWriter, r *http.Request, params parameters) {
+	if h.handledInlineEdit(w, params) {
+		return
+	}
+	chatID, err := params.ChatIDValue("chat_id", 0)
+	if err != nil || chatID == 0 {
+		writeError(w, http.StatusBadRequest, 400, "chat_id is required")
+		return
+	}
+	messageID, err := params.Int64("message_id", 0)
+	if err != nil || messageID == 0 {
+		writeError(w, http.StatusBadRequest, 400, "message_id is required")
+		return
+	}
+	replyMarkup, err := params.RawJSON("reply_markup")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, 400, "reply_markup must be valid JSON")
+		return
+	}
+	captionEntities, err := params.Entities("caption_entities")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, 400, "caption_entities must be valid JSON")
+		return
+	}
+	caption, _ := params.String("caption", "")
+	parseMode, _ := params.String("parse_mode", "")
+
+	msg, err := h.store.EditMessageCaption(r.Context(), store.EditMessageCaptionInput{
+		ChatID:           chatID,
+		MessageID:        messageID,
+		Caption:          caption,
+		CaptionEntities:  captionEntities,
+		CaptionParseMode: parseMode,
+		ReplyMarkup:      replyMarkup,
+	})
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	h.broadcastMessage("edited", msg)
+	writeOK(w, msg)
+}
+
+func (h *Handler) handleEditMessageMedia(w http.ResponseWriter, r *http.Request, params parameters) {
+	if h.handledInlineEdit(w, params) {
+		return
+	}
+	chatID, err := params.ChatIDValue("chat_id", 0)
+	if err != nil || chatID == 0 {
+		writeError(w, http.StatusBadRequest, 400, "chat_id is required")
+		return
+	}
+	messageID, err := params.Int64("message_id", 0)
+	if err != nil || messageID == 0 {
+		writeError(w, http.StatusBadRequest, 400, "message_id is required")
+		return
+	}
+	replyMarkup, err := params.RawJSON("reply_markup")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, 400, "reply_markup must be valid JSON")
+		return
+	}
+	mediaRaw, err := params.RawJSON("media")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, 400, "media must be valid JSON")
+		return
+	}
+	input := store.EditMessageMediaInput{ChatID: chatID, MessageID: messageID, ReplyMarkup: replyMarkup}
+	if len(mediaRaw) > 0 {
+		var media map[string]any
+		if err := json.Unmarshal(mediaRaw, &media); err != nil {
+			writeError(w, http.StatusBadRequest, 400, "media must be a JSON object")
+			return
+		}
+		input.MediaKind = stringFromAny(media["type"], "")
+		input.MediaURL = stringFromAny(media["media"], "")
+		input.Caption = stringFromAny(media["caption"], "")
+	}
+
+	msg, err := h.store.EditMessageMedia(r.Context(), input)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	h.broadcastMessage("edited", msg)
+	writeOK(w, msg)
+}
+
 func (h *Handler) handleEditMessageReplyMarkup(w http.ResponseWriter, r *http.Request, params parameters) {
+	if h.handledInlineEdit(w, params) {
+		return
+	}
 	chatID, err := params.ChatIDValue("chat_id", 0)
 	if err != nil || chatID == 0 {
 		writeError(w, http.StatusBadRequest, 400, "chat_id is required")
@@ -1029,7 +1182,7 @@ func (h *Handler) handleKnownMethodStub(w http.ResponseWriter, method string, pa
 		writeOK(w, map[string]any{"id": "sim_prepared_inline_message", "expiration_date": time.Now().Add(time.Hour).Unix()})
 	case "savePreparedKeyboardButton":
 		writeOK(w, map[string]any{"id": "sim_prepared_keyboard_button", "expiration_date": time.Now().Add(time.Hour).Unix()})
-	case "editMessageCaption", "editMessageMedia", "editMessageLiveLocation", "stopMessageLiveLocation", "editMessageChecklist", "stopPoll":
+	case "editMessageLiveLocation", "stopMessageLiveLocation", "editMessageChecklist", "stopPoll":
 		writeOK(w, true)
 	case "getStickerSet":
 		name, _ := params.String("name", "sim_sticker_set")
@@ -1296,7 +1449,10 @@ func (w *captureResponseWriter) Meta() responseMeta {
 	return meta
 }
 
-const maxUploadBytes = 32 << 20
+const (
+	maxUploadBytes = 32 << 20 // 32 MiB cap on a single multipart file
+	maxJSONBody    = 4 << 20  // 4 MiB cap on JSON/form bot API bodies
+)
 
 type uploadedFile struct {
 	FieldName   string
@@ -1323,7 +1479,7 @@ func parseParams(r *http.Request) (parameters, error) {
 	contentType, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	switch contentType {
 	case "application/json":
-		decoder := json.NewDecoder(r.Body)
+		decoder := json.NewDecoder(http.MaxBytesReader(nil, r.Body, maxJSONBody))
 		decoder.UseNumber()
 		var body map[string]any
 		if err := decoder.Decode(&body); err != nil {
@@ -1336,6 +1492,7 @@ func parseParams(r *http.Request) (parameters, error) {
 			params[key] = value
 		}
 	case "application/x-www-form-urlencoded", "":
+		r.Body = http.MaxBytesReader(nil, r.Body, maxJSONBody)
 		if err := r.ParseForm(); err != nil {
 			return nil, fmt.Errorf("parse form body: %w", err)
 		}
