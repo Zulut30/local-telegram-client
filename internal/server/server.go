@@ -65,13 +65,19 @@ func NewWithStore(cfg config.Config, logger *slog.Logger, st store.Store) http.H
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "result": true})
 	})
 	mux.HandleFunc("GET /_sim/file/{file_id}", func(w http.ResponseWriter, r *http.Request) {
-		serveMediaFile(w, r, mediaStore)
+		serveMediaByID(w, r, mediaStore, r.PathValue("file_id"))
 	})
 	mux.Handle("GET /_sim/events", hub)
 	mux.Handle("GET /", webui.Handler())
 
 	botHandler := botapi.New(cfg, st, logger, hub, mediaStore, recorder, webhooks)
 	var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Telegram-style file download: <base>/file/bot<token>/<file_path>.
+		// Authenticated by the bot token in the path, like Bot API methods.
+		if strings.HasPrefix(r.URL.Path, "/file/bot") {
+			serveBotFile(w, r, cfg, mediaStore)
+			return
+		}
 		if strings.HasPrefix(r.URL.Path, "/bot") {
 			botHandler.ServeHTTP(w, r)
 			return
@@ -98,8 +104,22 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	_ = json.NewEncoder(w).Encode(value)
 }
 
-func serveMediaFile(w http.ResponseWriter, r *http.Request, mediaStore media.Store) {
-	fileID := r.PathValue("file_id")
+func serveBotFile(w http.ResponseWriter, r *http.Request, cfg config.Config, mediaStore media.Store) {
+	rest := strings.TrimPrefix(r.URL.Path, "/file/bot")
+	slash := strings.IndexByte(rest, '/')
+	if slash <= 0 || slash == len(rest)-1 {
+		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+		return
+	}
+	token, filePath := rest[:slash], rest[slash+1:]
+	if subtle.ConstantTimeCompare([]byte(token), []byte(cfg.BotToken)) != 1 {
+		http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
+		return
+	}
+	serveMediaByID(w, r, mediaStore, filePath)
+}
+
+func serveMediaByID(w http.ResponseWriter, r *http.Request, mediaStore media.Store, fileID string) {
 	if fileID == "" {
 		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		return
@@ -177,7 +197,8 @@ func securityHeadersMiddleware(next http.Handler) http.Handler {
 
 func accessTokenMiddleware(cfg config.Config, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if cfg.Mode != config.ModeRemote || r.URL.Path == "/healthz" || strings.HasPrefix(r.URL.Path, "/bot") {
+		if cfg.Mode != config.ModeRemote || r.URL.Path == "/healthz" || r.URL.Path == "/version" ||
+			strings.HasPrefix(r.URL.Path, "/bot") || strings.HasPrefix(r.URL.Path, "/file/bot") {
 			next.ServeHTTP(w, r)
 			return
 		}

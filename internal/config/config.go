@@ -23,28 +23,30 @@ const (
 )
 
 type Config struct {
-	Mode       string
-	Addr       string
-	Token      string
-	BotToken   string
-	APIMode    string
-	BufferSize int
-	Persist    string
-	LogFormat  string
-	LogFile    string
+	Mode                 string
+	Addr                 string
+	Token                string
+	BotToken             string
+	APIMode              string
+	BufferSize           int
+	Persist              string
+	LogFormat            string
+	LogFile              string
+	AllowPrivateWebhooks bool
 }
 
 func Load(args []string) (Config, error) {
 	addrFromEnv := envString("SIM_ADDR", "") != ""
 	cfg := Config{
-		Mode:       envString("SIM_MODE", ModeLocal),
-		Token:      envString("SIM_TOKEN", ""),
-		BotToken:   envString("SIM_BOT_TOKEN", defaultBotToken),
-		APIMode:    envString("SIM_API_MODE", APIModeCompat),
-		BufferSize: envInt("SIM_BUFFER_SIZE", defaultBufferSize),
-		Persist:    envString("SIM_PERSIST", ""),
-		LogFormat:  envString("SIM_LOG_FORMAT", "json"),
-		LogFile:    envString("SIM_LOG_FILE", ""),
+		Mode:                 envString("SIM_MODE", ModeLocal),
+		Token:                envString("SIM_TOKEN", ""),
+		BotToken:             envString("SIM_BOT_TOKEN", defaultBotToken),
+		APIMode:              envString("SIM_API_MODE", APIModeCompat),
+		BufferSize:           envInt("SIM_BUFFER_SIZE", defaultBufferSize),
+		Persist:              envString("SIM_PERSIST", ""),
+		LogFormat:            envString("SIM_LOG_FORMAT", "json"),
+		LogFile:              envString("SIM_LOG_FILE", ""),
+		AllowPrivateWebhooks: envBool("SIM_ALLOW_PRIVATE_WEBHOOKS", false),
 	}
 	cfg.Addr = envString("SIM_ADDR", "")
 	if cfg.Addr == "" {
@@ -61,6 +63,7 @@ func Load(args []string) (Config, error) {
 	fs.StringVar(&cfg.Persist, "persist", cfg.Persist, "optional SQLite persistence path")
 	fs.StringVar(&cfg.LogFormat, "log-format", cfg.LogFormat, "log format: json or text")
 	fs.StringVar(&cfg.LogFile, "log-file", cfg.LogFile, "optional log file path")
+	fs.BoolVar(&cfg.AllowPrivateWebhooks, "allow-private-webhooks", cfg.AllowPrivateWebhooks, "in remote mode, allow setWebhook URLs that resolve to private/loopback addresses")
 
 	if err := fs.Parse(args); err != nil {
 		return Config{}, err
@@ -142,6 +145,18 @@ func envString(key, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func envBool(key string, fallback bool) bool {
+	value, ok := os.LookupEnv(key)
+	if !ok || value == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
 }
 
 func envInt(key string, fallback int) int {

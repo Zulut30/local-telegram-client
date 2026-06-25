@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"mime"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -300,6 +301,10 @@ func (h *Handler) handleSetWebhook(w http.ResponseWriter, r *http.Request, param
 		writeError(w, http.StatusBadRequest, 400, "url scheme must be http or https")
 		return
 	}
+	if h.cfg.Mode == config.ModeRemote && !h.cfg.AllowPrivateWebhooks && hostResolvesToPrivate(parsed.Hostname()) {
+		writeError(w, http.StatusBadRequest, 400, "url resolves to a private or loopback address; pass --allow-private-webhooks to override")
+		return
+	}
 	dropPending, err := params.Bool("drop_pending_updates", false)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, 400, "drop_pending_updates must be boolean")
@@ -336,6 +341,36 @@ func (h *Handler) handleDeleteWebhook(w http.ResponseWriter, r *http.Request, pa
 	writeOK(w, true)
 }
 
+// hostResolvesToPrivate reports whether a webhook host points at a private,
+// loopback, link-local, or unspecified address — a basic SSRF guard for remote
+// mode. IP literals are checked directly; hostnames are resolved best-effort
+// (an unresolvable host is treated as safe, since delivery will simply fail).
+func hostResolvesToPrivate(host string) bool {
+	if host == "" {
+		return true
+	}
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return isPrivateIP(ip)
+	}
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return false
+	}
+	for _, ip := range ips {
+		if isPrivateIP(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+func isPrivateIP(ip net.IP) bool {
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified()
+}
+
 func (h *Handler) handleGetWebhookInfo(w http.ResponseWriter) {
 	if h.webhooks == nil {
 		writeOK(w, webhook.Info{})
@@ -355,7 +390,7 @@ func (h *Handler) handleSendMessage(w http.ResponseWriter, r *http.Request, para
 		writeError(w, http.StatusBadRequest, 400, "text is required")
 		return
 	}
-	replyToMessageID, err := params.Int64("reply_to_message_id", 0)
+	replyToMessageID, err := params.ReplyToMessageID()
 	if err != nil {
 		writeError(w, http.StatusBadRequest, 400, "reply_to_message_id must be an integer")
 		return
@@ -439,7 +474,7 @@ func (h *Handler) handleSendPhoto(w http.ResponseWriter, r *http.Request, params
 		return
 	}
 	caption, _ := params.String("caption", "")
-	replyToMessageID, err := params.Int64("reply_to_message_id", 0)
+	replyToMessageID, err := params.ReplyToMessageID()
 	if err != nil {
 		writeError(w, http.StatusBadRequest, 400, "reply_to_message_id must be an integer")
 		return
@@ -1218,11 +1253,13 @@ func (h *Handler) lookupMedia(r *http.Request, fileID string) (media.File, bool)
 }
 
 func fileResult(file media.File) map[string]any {
+	// file_path is consumed by SDKs as <base>/file/bot<token>/<file_path>, which
+	// the server serves from the media store; keep it equal to the file id.
 	return map[string]any{
 		"file_id":        file.ID,
 		"file_unique_id": file.UniqueID,
 		"file_size":      file.Size,
-		"file_path":      strings.TrimPrefix(simFileURL(file), "/"),
+		"file_path":      file.ID,
 	}
 }
 
@@ -1769,6 +1806,29 @@ func (p parameters) RawJSON(key string) (json.RawMessage, error) {
 		}
 		return raw, nil
 	}
+}
+
+// ReplyToMessageID returns the reply target from either the legacy
+// reply_to_message_id field or the modern reply_parameters object.
+func (p parameters) ReplyToMessageID() (int64, error) {
+	id, err := p.Int64("reply_to_message_id", 0)
+	if err != nil {
+		return 0, err
+	}
+	if id != 0 {
+		return id, nil
+	}
+	raw, err := p.RawJSON("reply_parameters")
+	if err != nil || len(raw) == 0 {
+		return 0, err
+	}
+	var rp struct {
+		MessageID int64 `json:"message_id"`
+	}
+	if err := json.Unmarshal(raw, &rp); err != nil {
+		return 0, nil
+	}
+	return rp.MessageID, nil
 }
 
 func (p parameters) Entities(key string) ([]tg.MessageEntity, error) {

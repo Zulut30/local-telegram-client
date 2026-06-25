@@ -97,8 +97,12 @@ subtly wrong. Each item references the audit finding.
 - [x] `inline_message_id` path in edit methods → return `true` instead of 400 (F7).
 - [x] `getUpdates` honors `allowed_updates` (filter message vs callback_query) (F5).
 - [x] `editMessageText` no longer clobbers unspecified fields (F6).
-- [ ] `getFile` `file_path` format alignment with real Telegram (`<type>/file_<n>.<ext>`) (F33).
-- [ ] `reply_parameters` (modern reply API) accepted alongside `reply_to_message_id` (F35).
+- [x] `getFile` returns a `file_path` that is downloadable through a Telegram-style
+  `GET /file/bot<token>/<file_path>` route, so SDK `getFile` → download works end-to-end (F33).
+- [x] `reply_parameters` (modern reply API) accepted alongside `reply_to_message_id` (F35).
+- [x] SSRF guard: in remote mode, `setWebhook` rejects URLs resolving to
+  private/loopback/link-local addresses unless `--allow-private-webhooks` is set (F19, pulled
+  forward from M6).
 
 **Tests (P2)**
 
@@ -206,9 +210,7 @@ inline-mode bot run end-to-end against the sim.
 
 ### M6 — Self-hosted production hardening (maps to G6)
 
-- **SSRF guard** for `setWebhook` (F19): in remote mode, reject webhook URLs that
-  resolve to loopback/link-local/private ranges unless an explicit
-  `--allow-private-webhooks` opt-in is set (local mode keeps localhost webhooks).
+- ~~**SSRF guard** for `setWebhook` (F19)~~ — done early in M1.
 - Optional **per-IP rate limiting** and request-size config on `/_sim/*`.
 - **HSTS** + security headers in remote mode behind TLS (F45).
 - Hardened systemd unit + Caddy examples; container image SBOM + `govulncheck` gate.

@@ -179,6 +179,51 @@ func TestBotAPIFidelityEditsRepliesAndFilters(t *testing.T) {
 	}
 }
 
+func TestSetWebhookSSRFGuard(t *testing.T) {
+	botToken := "1234567890:aaaabbbbaaaabbbbaaaabbbbaaaabbbbccc"
+
+	// Remote mode without the override rejects private/loopback webhook targets.
+	remote := NewWithStore(config.Config{Mode: config.ModeRemote, Token: "secret", BotToken: botToken, BufferSize: 10},
+		slog.New(slog.NewTextHandler(io.Discard, nil)), store.NewMemory())
+	srv := httptest.NewServer(remote)
+	t.Cleanup(srv.Close)
+	botCall(t, srv.URL, botToken, "setWebhook", map[string]any{"url": "http://127.0.0.1:9999/hook"}, http.StatusBadRequest)
+
+	// With the override it is allowed.
+	remoteAllow := NewWithStore(config.Config{Mode: config.ModeRemote, Token: "secret", BotToken: botToken, BufferSize: 10, AllowPrivateWebhooks: true},
+		slog.New(slog.NewTextHandler(io.Discard, nil)), store.NewMemory())
+	srvAllow := httptest.NewServer(remoteAllow)
+	t.Cleanup(srvAllow.Close)
+	botCall(t, srvAllow.URL, botToken, "setWebhook", map[string]any{"url": "http://127.0.0.1:9999/hook"}, http.StatusOK)
+
+	// Local mode keeps localhost webhooks working (the normal dev case).
+	local := NewWithStore(config.Config{Mode: config.ModeLocal, BotToken: botToken, BufferSize: 10},
+		slog.New(slog.NewTextHandler(io.Discard, nil)), store.NewMemory())
+	srvLocal := httptest.NewServer(local)
+	t.Cleanup(srvLocal.Close)
+	botCall(t, srvLocal.URL, botToken, "setWebhook", map[string]any{"url": "http://127.0.0.1:8090/webhook"}, http.StatusOK)
+}
+
+func TestSendMessageReplyParameters(t *testing.T) {
+	st := store.NewMemory()
+	cfg := config.Config{Mode: config.ModeLocal, BotToken: "1234567890:aaaabbbbaaaabbbbaaaabbbbaaaabbbbccc", BufferSize: 50}
+	srv := httptest.NewServer(NewWithStore(cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), st))
+	t.Cleanup(srv.Close)
+
+	base := decodeBotResult[tg.Message](t, botCall(t, srv.URL, cfg.BotToken, "sendMessage", map[string]any{
+		"chat_id": 42, "text": "base",
+	}, http.StatusOK))
+
+	reply := decodeBotResult[tg.Message](t, botCall(t, srv.URL, cfg.BotToken, "sendMessage", map[string]any{
+		"chat_id":          42,
+		"text":             "reply",
+		"reply_parameters": map[string]any{"message_id": base.MessageID},
+	}, http.StatusOK))
+	if reply.ReplyToMessage == nil || reply.ReplyToMessage.MessageID != base.MessageID {
+		t.Fatalf("reply_parameters not honored: %+v", reply.ReplyToMessage)
+	}
+}
+
 func TestBotAPIMessageMutationsAndCallbackAnswerEvents(t *testing.T) {
 	st := store.NewMemory()
 	cfg := config.Config{Mode: config.ModeLocal, BotToken: "1234567890:aaaabbbbaaaabbbbaaaabbbbaaaabbbbccc", BufferSize: 100}
@@ -413,8 +458,19 @@ func TestBotAPIMultipartPhotoFileFlow(t *testing.T) {
 	if file.FileID != msg.Photo[0].FileID || file.FileSize != int64(len(imageBytes)) {
 		t.Fatalf("getFile result = %#v, want uploaded file metadata", file)
 	}
-	if file.FilePath != strings.TrimPrefix(msg.PhotoURL, "/") {
-		t.Fatalf("file_path = %q, want %q", file.FilePath, strings.TrimPrefix(msg.PhotoURL, "/"))
+	if file.FilePath != msg.Photo[0].FileID {
+		t.Fatalf("file_path = %q, want file id %q", file.FilePath, msg.Photo[0].FileID)
+	}
+
+	// The Telegram-style download path must resolve the same bytes.
+	botFileResp, err := http.Get(srv.URL + "/file/bot" + cfg.BotToken + "/" + file.FilePath)
+	if err != nil {
+		t.Fatalf("bot file download failed: %v", err)
+	}
+	botFileBytes, _ := io.ReadAll(botFileResp.Body)
+	_ = botFileResp.Body.Close()
+	if botFileResp.StatusCode != http.StatusOK || !bytes.Equal(botFileBytes, imageBytes) {
+		t.Fatalf("bot file download status=%d bytes=%q, want 200 + original", botFileResp.StatusCode, botFileBytes)
 	}
 
 	downloadResp, err := http.Get(srv.URL + msg.PhotoURL)
@@ -482,8 +538,8 @@ func TestBotAPIGenericMediaUploadFlow(t *testing.T) {
 		"file_id": msg.Document.FileID,
 	}, http.StatusOK)
 	file := decodeBotResult[botFileResult](t, fileEnv)
-	if file.FilePath != strings.TrimPrefix(msg.MediaURL, "/") {
-		t.Fatalf("file_path = %q, want %q", file.FilePath, strings.TrimPrefix(msg.MediaURL, "/"))
+	if file.FilePath != msg.Document.FileID {
+		t.Fatalf("file_path = %q, want file id %q", file.FilePath, msg.Document.FileID)
 	}
 
 	downloadResp, err := http.Get(srv.URL + msg.MediaURL)
