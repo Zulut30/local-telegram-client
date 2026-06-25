@@ -144,6 +144,8 @@ curl -s http://127.0.0.1:8080/_sim/coverage
 ### Control Plane
 
 ```text
+GET  /healthz            # liveness probe (always unauthenticated)
+GET  /version            # build info, Bot API version, current mode/api mode
 POST /_sim/inject        # inject message, photo, or callback_query
 GET  /_sim/state         # chats and messages
 GET  /_sim/traces        # trace ring snapshot
@@ -173,12 +175,22 @@ make build                  # build bin/sim and bin/showcase-bot
 ```
 
 UI and `/_sim/*` endpoints require the token in `Authorization: Bearer ...`, `X-Sim-Token`, or
-`?token=...`. Bot API paths stay authenticated by the bot token in the path.
+`?token=...`. Bot API paths stay authenticated by the bot token in the path. `/healthz` and
+`/version` stay unauthenticated for probes.
 
-Prefer running remote mode behind Tailscale, Cloudflare Tunnel, Caddy, or another HTTPS reverse
-proxy. Examples are available in `deploy/systemd/` and `deploy/caddy/`.
+Open the IDE once with the token in the query string, e.g.
+`https://host/?token=$SIM_TOKEN`. The SPA stores it in `sessionStorage`, strips it from the
+visible URL, and then attaches it to every control-plane request and SSE stream automatically.
+
+Tokens are compared in constant time, request bodies are size-limited, and conservative security
+headers (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`) are sent on every
+response. Still, prefer running remote mode behind Tailscale, Cloudflare Tunnel, Caddy, or another
+HTTPS reverse proxy. Examples are available in `deploy/systemd/` and `deploy/caddy/`.
 
 ### Roadmap Snapshot
+
+The detailed, audit-driven engineering plan (milestones M1–M8 with acceptance criteria) lives in
+[`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 | Goal | Focus | Status |
 |---|---|---|
@@ -291,7 +303,10 @@ curl -s http://127.0.0.1:8080/_sim/coverage
   `sendVoice`, `sendVideoNote`, `sendSticker`.
 - Multipart upload, `getFile`, `GET /_sim/file/{id}`.
 - Inline keyboard, reply keyboard, callback query, callback toast.
-- `editMessageText`, `editMessageReplyMarkup`, `deleteMessage`.
+- `editMessageText`, `editMessageCaption`, `editMessageMedia`, `editMessageReplyMarkup`,
+  `deleteMessage` (edit-методы возвращают обновлённый `Message`).
+- `reply_to_message` (вложенный контекст ответа), `message_thread_id`, `link_preview_options`,
+  `business_connection_id` пробрасываются в `Message`; `getUpdates` учитывает `allowed_updates`.
 - `sendChatAction`, draft events, rich messages, custom/premium emoji placeholders.
 - Trace panel with copy/reset and live SSE updates.
 

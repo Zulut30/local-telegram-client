@@ -3,17 +3,23 @@ BINARY ?= sim
 SHOWCASE_BINARY ?= showcase-bot
 BIN_DIR ?= bin
 
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null)
+DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+VERSION_PKG := github.com/Zulut30/local-telegram-client/internal/version
+LDFLAGS := -X $(VERSION_PKG).Version=$(VERSION) -X $(VERSION_PKG).Commit=$(COMMIT) -X $(VERSION_PKG).Date=$(DATE)
+
 .PHONY: build build-sim build-showcase run run-showcase run-showcase-webhook demo test vet build-frontend clean
 
 build: build-sim build-showcase
 
 build-sim:
 	mkdir -p $(BIN_DIR)
-	$(GO) build -o $(BIN_DIR)/$(BINARY) ./cmd/sim
+	$(GO) build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(BINARY) ./cmd/sim
 
 build-showcase:
 	mkdir -p $(BIN_DIR)
-	$(GO) build -o $(BIN_DIR)/$(SHOWCASE_BINARY) ./cmd/showcase-bot
+	$(GO) build -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(SHOWCASE_BINARY) ./cmd/showcase-bot
 
 run:
 	$(GO) run ./cmd/sim
