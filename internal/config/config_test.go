@@ -2,6 +2,13 @@ package config
 
 import "testing"
 
+func TestLoadRejectsReservedPersistFlag(t *testing.T) {
+	_, err := Load([]string{"--persist", "/tmp/state.db"})
+	if err == nil {
+		t.Fatal("expected --persist to be rejected as reserved")
+	}
+}
+
 func TestLoadDefaultsToLocalMode(t *testing.T) {
 	cfg, err := Load(nil)
 	if err != nil {

@@ -13,6 +13,7 @@ import (
 
 	"github.com/Zulut30/local-telegram-client/internal/config"
 	"github.com/Zulut30/local-telegram-client/internal/server"
+	"github.com/Zulut30/local-telegram-client/internal/version"
 )
 
 func main() {
@@ -29,7 +30,14 @@ func run() error {
 	}
 
 	logger := newLogger(cfg.LogFormat)
-	logger.Info("starting sim", "addr", cfg.Addr, "mode", cfg.Mode, "api_mode", cfg.EffectiveAPIMode())
+	build := version.Info()
+	logger.Info("starting sim",
+		"addr", cfg.Addr,
+		"mode", cfg.Mode,
+		"api_mode", cfg.EffectiveAPIMode(),
+		"version", build.Version,
+		"commit", build.Commit,
+	)
 
 	srv := &http.Server{
 		Addr:         cfg.Addr,

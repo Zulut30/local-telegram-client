@@ -281,7 +281,12 @@ func (r *Recorder) upsertLocked(trace Trace) {
 		}
 	}
 	if len(r.ring) == r.limit {
-		delete(r.traces, r.ring[0].ID)
+		evicted := r.ring[0].ID
+		delete(r.traces, evicted)
+		if timer := r.timers[evicted]; timer != nil {
+			timer.Stop()
+			delete(r.timers, evicted)
+		}
 		r.ring = append(r.ring[:0], r.ring[1:]...)
 	}
 	r.ring = append(r.ring, cloneTrace(trace))

@@ -136,6 +136,7 @@ func runWebhook(ctx context.Context, logger *slog.Logger, client *showcase.APICl
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /webhook", func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
+		r.Body = http.MaxBytesReader(w, r.Body, 4<<20)
 		var update telego.Update
 		if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
 			http.Error(w, "decode update", http.StatusBadRequest)

@@ -116,6 +116,9 @@ func (cfg *Config) validate() error {
 	if cfg.LogFile != "" {
 		return errors.New("log-file support is reserved for a future milestone")
 	}
+	if cfg.Persist != "" {
+		return errors.New("persist support is reserved for a future milestone (see docs/ROADMAP.md M3); state is in-memory only")
+	}
 	return nil
 }
 

@@ -45,6 +45,11 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// SSE is a long-lived stream, so the server-wide WriteTimeout would tear it
+	// down (and stall on a slow client). Clear the per-connection write deadline.
+	rc := http.NewResponseController(w)
+	_ = rc.SetWriteDeadline(time.Time{})
+
 	ch := make(chan Event, 32)
 	h.register <- ch
 	defer func() {
